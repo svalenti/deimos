@@ -11,12 +11,15 @@ import ccdproc
 from astropy.nddata import CCDData
 from astropy import units as u
 from scipy.interpolate import LSQBivariateSpline, LSQUnivariateSpline
+from scipy.interpolate import UnivariateSpline
+from scipy.interpolate import SmoothBivariateSpline
 from astropy.stats import sigma_clip
 from scipy.optimize import fmin
 from scipy.optimize import least_squares
 from scipy.interpolate import interp1d
 import pickle
 from astropy.stats import sigma_clipped_stats
+from deimos import __path__ as _path
 
 poly_arc = {3: np.array([  1.03773471e-05,   5.78487274e-01,   4.45847046e+03]),
             7: np.array([  2.30350858e-05,  -7.64099597e-01,   9.79141140e+03])}
@@ -258,23 +261,19 @@ def find_sky_object(image,objectcut=0.2,key=3,interactive=False):
     ax2.grid();
 
     # find the rows with object light
-    objrows = ys[rowaverage > objectcut]
+    #objrows = ys[rowaverage > objectcut]
 
     rangeobj = {3:'70,100', 7:'55,90'}
     if interactive:
         obj = input('give object position [eg ' + str(rangeobj[key]) + ']')
         if not obj:
             obj = rangeobj[key]
-        start,end= obj.split(',')
-        objrows = np.arange(int(start),int(end))
     else:
-        # add some margin to object rows
-        ngrow = 5 # number of rows to include above and below object rows
-        newobjrows = []
-        for row in objrows:
-            newobjrows.extend([row + i for i in np.arange(-ngrow, ngrow + 1)])
-        objrows = np.unique(newobjrows)
+        obj = rangeobj[key]
         
+    start,end= obj.split(',')
+    objrows = np.arange(int(start),int(end))
+            
     # mask to mark sky rows
     skymask = np.ones(image.shape, dtype=bool)
     objrows = objrows[objrows<ny]
@@ -284,17 +283,17 @@ def find_sky_object(image,objectcut=0.2,key=3,interactive=False):
     badrows = ys[rowaverage < -0.05]
     skymask[badrows, :] = False
     
-    # rows with mostly sky background light
-    skyrows = ys[skymask.mean(axis=1) == 1]
-
-    # median (unmasked) sky spectrum and standard deviation
-    medspec = np.median(image[skyrows, :], axis=0)
-    stdspec = np.std(image[skyrows, :], axis=0, ddof=1)
-    
-    # exclude deviant pixels from the skymask
-    pull = (image - medspec) / stdspec
-    w = pull > 5
-    skymask[w] = False
+#    # rows with mostly sky background light
+#    skyrows = ys[skymask.mean(axis=1) == 1]
+#
+#    # median (unmasked) sky spectrum and standard deviation
+#    medspec = np.median(image[skyrows, :], axis=0)
+#    stdspec = np.std(image[skyrows, :], axis=0, ddof=1)
+#    
+#    # exclude deviant pixels from the skymask
+#    pull = (image - medspec) / stdspec
+#    w = pull > 5
+#    skymask[w] = False
 
     if interactive:
         plt.figure(1)
@@ -513,12 +512,17 @@ def trace(img,dictionary, g0=10, g1=85, g2=3, key=3, verbose=False):
              profile = np.mean(stamp, axis=1)
              params = fmin(get_profile_chisq, guess, args=(ys, profile))
              ycenter[icol, :] = params[[1]]
-         
+
+        print(ycenter)
         # fit the relation with a polynomial
         ind = 0 # which trace 0 or 1?
         t_order = 3
         trace_c = np.polyfit(cols, ycenter[:, ind], t_order)
+        print(trace_c)
         slitpos = yvals - np.polyval(trace_c, yvals)
+        peakpos = np.polyval(trace_c, xs)
+
+        dictionary[img]['peakpos' + str(key)] = peakpos
         dictionary[img]['trace' + str(key)] = slitpos
         dictionary[img]['tracefit' + str(key)] = trace_c
         if verbose:
@@ -536,7 +540,6 @@ def trace(img,dictionary, g0=10, g1=85, g2=3, key=3, verbose=False):
             ax22.axes.set_ylabel('Fit Residual (pixels)')
             ax2.set_xlabel('Column Number');
             input('trace completed')
-
 
     return dictionary
 
@@ -562,6 +565,7 @@ def extract(img,dictionary, key=3, edgeleft=30, edgeright=30, othertrace=None, v
         if 'trace' + str(key) in dictionary[othertrace]:
             slitpos = dictionary[othertrace]['trace' + str(key)]
             trace_c = dictionary[othertrace]['tracefit' + str(key)]
+            peak = dictionary[othertrace]['peakpos' + str(key)]
             extract = True
         else:
             print('Warning: ',othertrace,' do not have a trace')
@@ -569,6 +573,7 @@ def extract(img,dictionary, key=3, edgeleft=30, edgeright=30, othertrace=None, v
     if 'trace' + str(key) in dictionary[img]:
         slitpos = dictionary[img]['trace' + str(key)]
         trace_c = dictionary[img]['tracefit' + str(key)]
+        peak = dictionary[img]['peakpos' + str(key)]
         extract = True
         
     if extract is False:
@@ -608,7 +613,7 @@ def extract(img,dictionary, key=3, edgeleft=30, edgeright=30, othertrace=None, v
         # remove outliers and re-fit
         diff = counts - profile_spl(pos)
         sample = sigma_clip(diff)
-        w = ((np.abs(diff) / sample.std()) < 5) & np.isfinite(diff)
+        w = ((np.abs(diff) / sample.std()) < 3) & np.isfinite(diff)
         profile_spl = LSQUnivariateSpline(pos[w], counts[w], t)
         
         # create the profile image
@@ -616,7 +621,8 @@ def extract(img,dictionary, key=3, edgeleft=30, edgeright=30, othertrace=None, v
 
         #profile image
         _out = fits.ImageHDU(data=profile_image)
-        fits.writeto(_dir + '/' + str(key)  + '/' + img + '_profile_'+str(key)+'.fits', _out.data,header=_out.header,overwrite='yes')
+        fits.writeto(_dir + '/' + str(key)  + '/' + re.sub('.fits','',img) + '_profile_' +\
+                     str(key) + '.fits', _out.data,header=_out.header,overwrite='yes')
 
                     
         # de-weight negative values in provile_image
@@ -626,16 +632,33 @@ def extract(img,dictionary, key=3, edgeleft=30, edgeright=30, othertrace=None, v
         w = (slitpos > (-1) * edgeleft) & (slitpos < edgeright )
         ymin, ymax = yvals[w].min(), yvals[w].max()
         print(ymin, ymax)
+
+        ###########################################################
+        ######  replacing with my simple basic extraction
+        ######
+        zero = nosky-nosky
+        for r in range(nx):
+            zero[int(peak[r])-edgeleft:int(peak[r])+edgeright,r]=1
+
+        sumsource  = nosky * zero
+        sumsky = sky * zero
+        spec_basic = sumsource.sum(axis=0)
+        skybg_basic = sumsky.sum(axis=0)
+
+#        
+#        # calculate the sum
+#        spec_basic = nosky[ymin:ymax, :].sum(axis=0)
+#        if verbose:
+#            print(ymin,ymax)
+#            input('stop here')
+#            
+#        # sky background
+#        skybg_basic = np.array(sky)[ymin:ymax, :].sum(axis=0)
+#
+#        ######################################################
+
+
         
-        # calculate the sum
-        spec_basic = nosky[ymin:ymax, :].sum(axis=0)
-        if verbose:
-            print(ymin,ymax)
-            input('stop here')
-            
-        # sky background
-        skybg_basic = np.array(sky)[ymin:ymax, :].sum(axis=0)
-         
         # calculate the weighted average (for each column)
         spec_opt = (nosky * profile_image)[ymin:ymax, :].sum(axis=0) / profile_image.sum(axis=0)
         
@@ -736,7 +759,7 @@ def readstandard(standardfile):
     elif standardfile[0] == '/':
         listastandard = standardfile
     else:
-        listastandard = deimos.__path__[0] + '/standard/' + standardfile
+        listastandard = _path[0] + '/standard/' + standardfile
     f = open(listastandard, 'r')
     liststd = f.readlines()
     f.close()
@@ -759,3 +782,176 @@ def readstandard(standardfile):
     return np.array(star), np.array(ra), np.array(dec), np.array(magnitude)
 
 ###########################################################################
+
+def _mag2flux(wave, mag, zeropt=48.60):
+    '''
+    Convert magnitudes to flux units. This is important for dealing with standards
+    and files from IRAF, which are stored in AB mag units. To be clear, this converts
+    to "PHOTFLAM" units in IRAF-speak. Assumes the common flux zeropoint used in IRAF
+
+    Parameters
+    ----------
+    wave : 1d numpy array
+        The wavelength of the data points
+    mag : 1d numpy array
+        The magnitudes of the data
+    zeropt : float, optional
+        Conversion factor for mag->flux. (Default is 48.60)
+
+    Returns
+    -------
+    Flux values!
+    '''
+
+    c = 2.99792458e18 # speed of light, in A/s
+    flux = 10.0**( (mag + zeropt) / (-2.5) )
+    return flux * (c / wave**2.0)
+
+###########################################################################
+
+
+def DefFluxCal(obj_wave, obj_flux, stdstar='', mode='spline', polydeg=9,
+               display=False):
+    """
+
+    Parameters
+    ----------
+    obj_wave : 1-d array
+        The 1-d wavelength array of the spectrum
+
+    obj_flux : 1-d array
+        The 1-d flux array of the spectrum
+
+    stdstar : str
+        Name of the standard star file to use for flux calibration. You
+        must give the subdirectory and file name, for example:
+
+        >>> sensfunc = DefFluxCal(wave, flux, mode='spline', stdstar='spec50cal/feige34.dat')  # doctest: +SKIP
+
+        If no standard is set, or an invalid standard is selected, will
+        return array of 1's and a warning. A list of all available
+        subdirectories and objects is available on the wiki, or look in
+        pydis/resources/onedstds/
+
+    mode : str, optional
+        either "linear", "spline", or "poly" (Default is spline)
+
+    polydeg : float, optional
+        set the order of the polynomial to fit through (Default is 9)
+
+    display : bool, optional
+        If True, plot the down-sampled sensfunc and fit to screen (Default
+        is False)
+
+    Returns
+    -------
+    sensfunc : 1-d array
+        The sensitivity function for the standard star
+
+    """
+    stdstar2 = stdstar.lower()
+    std_dir = os.path.join(os.path.dirname(_path[0]),
+                           'deimos','resources', 'onedstds')
+    print(std_dir)
+    print(stdstar2)
+    if os.path.isfile(os.path.join(std_dir, stdstar2)):
+        std_wave, std_mag, std_wth = np.genfromtxt(os.path.join(std_dir, stdstar2),
+                                                   skip_header=1, unpack=True)
+        # standard star spectrum is stored in magnitude units
+        std_flux = _mag2flux(std_wave, std_mag)
+
+        # Automatically exclude these obnoxious lines...
+        balmer = np.array([6563, 4861, 4341], dtype='float')
+
+        # down-sample (ds) the observed flux to the standard's bins
+        obj_flux_ds = []
+        obj_wave_ds = []
+        std_flux_ds = []
+        for i in range(len(std_wave)):
+            rng = np.where((obj_wave >= std_wave[i] - std_wth[i] / 2.0) &
+                           (obj_wave < std_wave[i] + std_wth[i] / 2.0))
+            IsH = np.where((balmer >= std_wave[i] - std_wth[i] / 2.0) &
+                           (balmer < std_wave[i] + std_wth[i] / 2.0))
+
+            # does this bin contain observed spectra, and no Balmer line?
+            if (len(rng[0]) > 1) and (len(IsH[0]) == 0):
+                # obj_flux_ds.append(np.sum(obj_flux[rng]) / std_wth[i])
+                obj_flux_ds.append( np.nanmean(obj_flux[rng]) )
+                obj_wave_ds.append(std_wave[i])
+                std_flux_ds.append(std_flux[i])
+
+
+        # the ratio between the standard star flux and observed flux
+        # has units like erg / counts
+        ratio = np.abs(np.array(std_flux_ds, dtype='float') /
+                       np.array(obj_flux_ds, dtype='float'))
+
+
+        # interp calibration (sensfunc) on to object's wave grid
+        # can use 3 types of interpolations: linear, cubic spline, polynomial
+
+        # if invalid mode selected, make it spline
+        if mode not in ('linear', 'spline', 'poly'):
+            mode = 'spline'
+            print("WARNING: invalid mode set in DefFluxCal. Changing to spline")
+
+        # actually fit the log of this sensfunc ratio
+        # since IRAF does the 2.5*log(ratio), everything in mag units!
+        LogSensfunc = np.log10(ratio)
+
+        # interpolate back on to observed wavelength grid
+        if mode=='linear':
+            sensfunc2 = np.interp(obj_wave, obj_wave_ds, LogSensfunc)
+        elif mode=='spline':
+            spl = UnivariateSpline(obj_wave_ds, LogSensfunc, ext=0, k=2 ,s=0.0025)
+            sensfunc2 = spl(obj_wave)
+        elif mode=='poly':
+            fit = np.polyfit(obj_wave_ds, LogSensfunc, polydeg)
+            sensfunc2 = np.polyval(fit, obj_wave)
+
+        if display is True:
+            plt.figure(1)
+            plt.clf()
+            plt.plot(std_wave, std_flux, 'r', alpha=0.5, label='standard flux')
+            plt.xlabel('Wavelength')
+            plt.ylabel('Standard Star Flux')
+            plt.legend()
+            plt.show()
+
+            plt.figure(2)
+            plt.clf()
+            plt.plot(obj_wave, obj_flux, 'k', label='observed counts')
+            plt.plot(obj_wave_ds, obj_flux_ds, 'bo',
+                    label='downsample observed')
+            plt.xlabel('Wavelength')
+            plt.ylabel('Observed Counts/S')
+            plt.legend()
+            plt.show()
+            input('look at the plot')
+
+            plt.figure(1)
+            plt.clf()
+            plt.plot(obj_wave_ds, LogSensfunc, 'ko', label='sensfunc')
+            plt.plot(obj_wave, sensfunc2, label='interpolated sensfunc')
+            plt.xlabel('Wavelength')
+            plt.ylabel('log Sensfunc')
+            plt.legend()
+            plt.show()
+
+            plt.figure(2)
+            plt.clf()
+            plt.plot(obj_wave, obj_flux*(10**sensfunc2),'k',
+                        label='applied sensfunc')
+            plt.plot(std_wave, std_flux, 'ro', alpha=0.5, label='standard flux')
+            plt.xlabel('Wavelength')
+            plt.ylabel('Standard Star Flux')
+            plt.legend()
+            plt.show()
+    else:
+        sensfunc2 = np.zeros_like(obj_wave)
+        print('ERROR: in DefFluxCal no valid standard star file found at ')
+        print(os.path.join(std_dir, stdstar2))
+
+    return 10**sensfunc2
+
+###############################################

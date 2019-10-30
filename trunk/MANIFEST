@@ -1,3 +1,4 @@
 README.txt
 setup.py
 src/deimos/tt.py
+src/deimos/deimosutil.py

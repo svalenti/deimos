@@ -13,6 +13,9 @@ import numpy as np
 from scipy.interpolate import LSQBivariateSpline, LSQUnivariateSpline
 from matplotlib import pylab as plt
 from astropy.io import fits
+import glob
+from deimos import __path__ as _path
+
 
 plt.ion()
 
@@ -160,7 +163,38 @@ if run:
                 print('\n#### Extraction ',img)
                 print(img,dictionary[img]['OBJECT'])
                 for key in [3,7]:
-                    dictionary = deimosutil.extract(img,dictionary, key, 30, 30, None, True)
+                    sky = dictionary[img]['sky' + str(key)].data
+                    image = dictionary[img]['trimmed' + str(key) ].data
+                    nosky = image - sky
+                    ny, nx = nosky.shape
+                    xs = np.arange(nx)
+                    peak = dictionary[img]['peakpos' + str(key)]
+                    plt.figure(1)
+                    plt.clf()
+                    deimos.deimosutil.image_plot(nosky)
+                    plt.plot(xs,peak,'.r')
+                    othertrace = None
+                    answ = input('trace ok [[y]/n]? ')
+                    if not answ:
+                        answ='y'
+                    if answ in ['Yes','yes','Y','y']:
+                        othertrace = None
+                    else:
+                        for image in setup_object[setup]:
+                            print(image)
+                            peak = dictionary[image]['peakpos' + str(key)]
+                            plt.clf()
+                            deimos.deimosutil.image_plot(nosky)
+                            plt.plot(xs,peak,'.')
+                            answ0 = input('trace ok [y/[n]]? ')
+                            if not answ0:
+                                answ0='n'
+                            if answ0 in ['y','Y','yes']:
+                                othertrace = image
+                                break
+                                
+                    print(othertrace)
+                    dictionary = deimosutil.extract(img,dictionary, key, 30, 30, othertrace, True)
 
             #####  initial wavelengh calibration #############################                     
             arc = setup_arc[setup][1]
@@ -237,97 +271,63 @@ if run:
                                    np.cos((_ra - rastd) * scal)) * ((180 / np.pi) * 3600)
                     if np.min(dd) < 5200:
                         dictionary[img]['std']= std[np.argmin(dd)]
-                        print(dictionary[img].keys(),dictionary[img]['OBJECT'])
-                        
-                        stdfile = deimos.__path__[0]+'/standard/'+std[np.argmin(dd)]
-                        data = np.genfromtxt(stdfile)
-                        x,y,z = zip(*data)
+                        std0 = std[np.argmin(dd)]
+                        liststd = glob.glob(_path[0]+'/resources/onedstds/*/'+std0)
+                        if len(liststd):
+                            dostandard = True
+                            if len(liststd)>1:
+                                plt.figure(1)
+                                plt.clf()
+                                for standard in liststd:
+                                    print(standard)
+                                    data = np.genfromtxt(standard)
+                                    x,y,z = zip(*data)
+                                    std_flux = deimos.deimosutil._mag2flux(np.array(x),np.array(y))                        
+                                    plt.plot(x,std_flux,'-',label=re.sub(_path[0],'',standard))
+                                plt.legend()
+                                standard = input('which standard do you want to use?')
+                                if not standard:
+                                    standard = liststd[0]
+                            else:
+                                standard = liststd[0]  
 
-                        ###########
+                        else:
+                            dostandard = False
+                    else:
+                        dostandard = False
+
+                    if dostandard:
                         std_spec = dictionary[img]['spec_opt'+str(key)]
                         wavs = dictionary[img]['wave'+str(key)]
                         if key==7:
                             wavs = wavs[::-1]
                             std_spec = std_spec[::-1]
-                            
                         plt.clf()
                         plt.plot(wavs, std_spec)
                         plt.xlabel('Wavelength ($\AA$)')
                         plt.ylabel('Counts');
                         input('standard spectrum')
+                        print(standard)
+                        response = deimosutil.DefFluxCal(wavs, std_spec, stdstar=re.sub(_path[0]+'/resources/onedstds/','',standard),\
+                                                         mode='spline', polydeg=9, display=verbose)
 
-
-                        ########
-                        dtype = []
-                        dtype.append( ('wav', float) )
-                        dtype.append( ('flux', float) ) # units are ergs/cm/cm/s/A * 10**16
-                        dtype.append( ('eflux', float) )
-                        dtype.append( ('dlam', float) )
-                        calspec = np.genfromtxt('ftp://ftp.eso.org/pub/stecf/standards/okestan/fbd28d4211.dat', dtype=dtype)
-                        plt.figure(2)
+                        data = np.genfromtxt(standard)
+                        x,y,z = zip(*data)
+                        std_flux = deimos.deimosutil._mag2flux(np.array(x),np.array(y))                        
                         plt.clf()
-                        fig2 = plt.figure(2)                            
-                        plt.plot(calspec['wav'], calspec['flux']);
-                        plt.xlabel('Wavelength ($\AA$)')
-                        plt.ylabel('$10^{16} * F_{\lambda}$');
-                        plt.yscale('log');
-
-                        input('from archive')
-                        # fit a spline to the tabulated spectrum
-                        t = np.arange(calspec['wav'][1], calspec['wav'][-2], np.int(np.median(calspec['dlam'])))
-                        stdflux = LSQUnivariateSpline(calspec['wav'], calspec['flux'], t, calspec['eflux'])
-
-                        # get the counts to flux density ratios in each wavelength bin
-                        # exclude significant line features (fluxes near these depend on spectral resolution)
-                        ratios = std_spec / stdflux(wavs)
-                        w = (wavs > calspec['wav'].min()) \
-                            & (wavs < calspec['wav'].max()) \
-                            & (np.abs(wavs - 7650) > 70) \
-                            & (np.abs(wavs - 6900) > 40) \
-                            & (np.abs(wavs - 6563) > 40) \
-
-                        # fit a spline to the ratios to determine the response function
-                        t = wavs[w][1:-2:50]
-                        print(wavs[w])
-                        print(len(t))
-                        respfn = LSQUnivariateSpline(wavs[w], ratios[w], t[1:-1])
-
-                        plt.figure(1)
-                        plt.clf()
-                        fig1 = plt.figure(1)                            
-                        plt.plot(wavs[w], ratios[w], 'ro')
-                        xwav = np.linspace(wavs[w][1], wavs[w][-1], 1000)
-                        plt.plot(xwav, respfn(xwav));
-                        plt.xlabel('Wavelength ($\AA$)')
-                        plt.ylabel('Response Function (counts/$F_{\lambda}$)');
-
-                        input('response function')
+                        plt.plot(x,std_flux,'-r')
+                        plt.plot(wavs,std_spec*response,'-b')
+                        input('standard spectrum: done')
                         
-                        # compare the tabulated and extracted flux densities (applying the response function)
-                        plt.figure(2)
-                        plt.clf()
-                        fig2 = plt.figure(2)                            
-                        plt.clf()
-                        plt.plot(calspec['wav'], calspec['flux'], label='Tabulated (published) Spectrum');
-                        plt.plot(wavs, std_spec / respfn(wavs), label='Extracted Spectrum')
-                        plt.xlim(5300, 9200) # standard star values are only tabulated out to ~9200 A
-                        plt.ylim(0, 1000)
-
-                        plt.xlabel('Wavelength ($\AA$)')
-                        plt.ylabel('$F_{\lambda}$')
-                        plt.ylim(50, 1000)
-                        plt.yscale('log')
-                        plt.legend();
                         if key==7:
-                            dictionary[img]['response'+str(key)] = respfn(wavs)[::-1]
+                            dictionary[img]['response'+str(key)] = response[::-1]
                         else:
-                            dictionary[img]['response'+str(key)] = respfn(wavs)
-                            
+                            dictionary[img]['response'+str(key)] = response                            
                         input('response function applyed to the standard')
                     else:
                         print('object')
 
-            # apply sensitivity            
+            #################### apply sensitivity            
             for key in [3,7]:
                 std=[]
                 science=[]
@@ -339,6 +339,10 @@ if run:
                 if len(std)>1:
                     print(std)
                     img0 = input('which standard do you want to use?')
+                    if not img0:
+                        img0 = std[0]
+                else:
+                    img0 = std[0]
                 for img in science+std:
                     spec_opt = np.array(dictionary[img]['spec_opt' + str(key)].data)
                     wavs = np.array(dictionary[img]['wave' + str(key)])
@@ -347,11 +351,11 @@ if run:
                     plt.clf()
                     fig2 = plt.figure(2)                            
                     plt.clf()
-                    plt.plot(wavs, std_spec / respfn, label='Calibrated Spectrum')
-                    dictionary[img]['spec_flux'+str(key)] = std_spec / respfn
+                    plt.plot(wavs, spec_opt * respfn, label='Calibrated Spectrum')
+                    dictionary[img]['spec_flux'+str(key)] = std_opt * respfn
                     input('look final spectrum')
 
-                    
+
             ################      write file
             _dir = '_'.join(setup)
             if not os.path.isdir(_dir):
@@ -389,3 +393,68 @@ if run:
 
                     imgout = re.sub('.fits','',img) + '_' + str(key) + '_f.ascii'
                     np.savetxt(_dir + '/' + str(key)  + '/' + imgout,np.c_[wavs,spec_flux])
+
+
+########################################
+                        
+#                        print(dictionary[img].keys(),dictionary[img]['OBJECT'])                        
+#                        stdfile = deimos.__path__[0]+'/standard/'+std[np.argmin(dd)]
+#                        data = np.genfromtxt(stdfile)
+#                        x,y,z = zip(*data)
+                        ###########
+                        ########
+#                        dtype = []
+#                        dtype.append( ('wav', float) )
+#                        dtype.append( ('flux', float) ) # units are ergs/cm/cm/s/A * 10**16
+#                        dtype.append( ('eflux', float) )
+#                        dtype.append( ('dlam', float) )
+#                        calspec = np.genfromtxt('ftp://ftp.eso.org/pub/stecf/standards/okestan/fbd28d4211.dat', dtype=dtype)
+#                        plt.figure(2)
+#                        plt.clf()
+#                        fig2 = plt.figure(2)                            
+#                        plt.plot(calspec['wav'], calspec['flux']);
+#                        plt.xlabel('Wavelength ($\AA$)')
+#                        plt.ylabel('$10^{16} * F_{\lambda}$');
+#                        plt.yscale('log');
+#                        input('from archive')
+#                        # fit a spline to the tabulated spectrum
+#                        t = np.arange(calspec['wav'][1], calspec['wav'][-2], np.int(np.median(calspec['dlam'])))
+#                        stdflux = LSQUnivariateSpline(calspec['wav'], calspec['flux'], t, calspec['eflux'])
+#                        # get the counts to flux density ratios in each wavelength bin
+#                        # exclude significant line features (fluxes near these depend on spectral resolution)
+#                        ratios = std_spec / stdflux(wavs)
+#                        w = (wavs > calspec['wav'].min()) \
+#                            & (wavs < calspec['wav'].max()) \
+#                            & (np.abs(wavs - 7650) > 70) \
+#                            & (np.abs(wavs - 6900) > 40) \
+#                            & (np.abs(wavs - 6563) > 40) \
+#                        # fit a spline to the ratios to determine the response function
+#                        t = wavs[w][1:-2:50]
+#                        print(wavs[w])
+#                        print(len(t))
+#                        respfn = LSQUnivariateSpline(wavs[w], ratios[w], t[1:-1])
+#                        plt.figure(1)
+#                        plt.clf()
+#                        fig1 = plt.figure(1)                            
+#                        plt.plot(wavs[w], ratios[w], 'ro')
+#                        xwav = np.linspace(wavs[w][1], wavs[w][-1], 1000)
+#                        plt.plot(xwav, respfn(xwav));
+#                        plt.xlabel('Wavelength ($\AA$)')
+#                        plt.ylabel('Response Function (counts/$F_{\lambda}$)');
+#                        input('response function')                       
+#                        # compare the tabulated and extracted flux densities (applying the response function)
+#                        plt.figure(2)
+#                        plt.clf()
+#                        fig2 = plt.figure(2)                            
+#                        plt.clf()
+#                        plt.plot(calspec['wav'], calspec['flux'], label='Tabulated (published) Spectrum');
+#                        plt.plot(wavs, std_spec / respfn(wavs), label='Extracted Spectrum')
+#                        plt.xlim(5300, 9200) # standard star values are only tabulated out to ~9200 A
+#                        plt.ylim(0, 1000)
+#                        plt.xlabel('Wavelength ($\AA$)')
+#                        plt.ylabel('$F_{\lambda}$')
+#                        plt.ylim(50, 1000)
+#                        plt.yscale('log')
+#                        plt.legend();
+
+                    

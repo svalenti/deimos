@@ -15,5 +15,5 @@ setup(
     requires=['numpy','astropy','matplotlib'],
     packages=['deimos'],
     package_dir={'': 'src/'},
-    package_data={'deimos': ["standard/*txt","standard/*dat"]}
+    package_data={'deimos': ["standard/*txt","standard/*dat","resources/*/*/*","resources/*/*"]}
 )
