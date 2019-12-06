@@ -20,6 +20,10 @@ from scipy.interpolate import interp1d
 import pickle
 from astropy.stats import sigma_clipped_stats
 from deimos import __path__ as _path
+import sys
+pyversion = sys.version_info[0]
+
+
 
 poly_arc = {3: np.array([  1.03773471e-05,   5.78487274e-01,   4.45847046e+03]),
             7: np.array([  2.30350858e-05,  -7.64099597e-01,   9.79141140e+03])}
@@ -86,7 +90,7 @@ def fit_sky(xvals, yvals, image, ky=1, dx=0.5):
 ###########################
 
 def checkalldata(directory=False):
-    if directory is not False:
+    if directory:
         imglist = glob.glob(directory + '*')
     else:
         imglist = glob.glob('*fits')
@@ -128,8 +132,11 @@ def checkalldata(directory=False):
         print(img,dictionary[img]['type'],dictionary[img]['OBJECT'],dictionary[img]['OBSTYPE'])
         if dictionary[img]['type'] is None:
             print(dictionary[img])
-            answ = input('what is it?')
-    
+            if pyversion>=3:
+                answ = input('what is it?')
+            else:
+                answ = raw_input('what is it?')
+                
         _grism = dictionary[img]['GRATENAM']
         _slit = dictionary[img]['SLMSKNAM']        
     
@@ -265,7 +272,11 @@ def find_sky_object(image,objectcut=0.2,key=3,interactive=False):
 
     rangeobj = {3:'70,100', 7:'55,90'}
     if interactive:
-        obj = input('give object position [eg ' + str(rangeobj[key]) + ']')
+        if pyversion>=3:
+            obj = input('give object position [eg ' + str(rangeobj[key]) + ']')
+        else:
+            obj = raw_input('give object position [eg ' + str(rangeobj[key]) + ']')
+            
         if not obj:
             obj = rangeobj[key]
     else:
@@ -308,7 +319,7 @@ def find_sky_object(image,objectcut=0.2,key=3,interactive=False):
 
 def retify_frame(img0, dictionary, ext=3, verbose=False):            
     image = dictionary[img0]['trimmed'+str(ext)].data                
-    # this is an arc, we do not ned to mask
+    # this is an arc, we do not need to mask
     skymask = np.ones(image.shape, dtype=bool)
     
     # show the mask
@@ -316,8 +327,11 @@ def retify_frame(img0, dictionary, ext=3, verbose=False):
         plt.figure(1)
         plt.clf()
         plt.imshow(skymask, origin='lower', aspect='auto');
-        input('stop')
-
+        if pyversion>=3:
+            input('stop')
+        else:
+            raw_input('stop')
+            
     # cut out a small image "stamp" near the center of the frame
     ny, nx = image.shape
     cy, cx = ny//2, nx//2
@@ -342,14 +356,18 @@ def retify_frame(img0, dictionary, ext=3, verbose=False):
         plt.clf()
         plt.plot(xs_stamp.ravel(), stamp.ravel(), 'r.');
         plt.xlabel('Column Number'), plt.ylabel('Counts');
-        input('stop')
-    
+        if pyversion>=3:
+            input('stop')
+        else:
+            raw_input('stop')
+            
     # pixel offsets from the refernece pixel
     dxs = xs_stamp - col
     dys = ys_stamp - row
-
+    print(dxs)
+    
     # parameter guess
-    guess = (0, 0)
+    guess = (1e-5, 1e-5)
 
     # get the wavelength offsets and plot vs. counts
     dls = get_dl_model(guess, dxs, dys)
@@ -358,8 +376,11 @@ def retify_frame(img0, dictionary, ext=3, verbose=False):
     plt.plot(dls.ravel(), stamp.ravel(), 'r.')
     plt.xlabel('Wavelength Offset')
     plt.ylabel('Counts');
-    input('stop')
-
+    if pyversion>=3:
+        input('stop')
+    else:
+        raw_input('stop')
+        
     # fit a spline to the data and plot
     x, y, spl = get_profile_spl(dls, stamp)
 
@@ -373,8 +394,11 @@ def retify_frame(img0, dictionary, ext=3, verbose=False):
     ax1.plot(x, y - spl(x), 'r.')
     ax1.set_ylim(-200, 200)
     ax1.set_xlabel('Wavelength Offset');
-    input('stop')
-    
+    if pyversion>=3:
+        input('stop')
+    else:
+        raw_input('stop')
+        
     # see how good our guess is
     check_dl_model(guess, dxs, dys, stamp)
 
@@ -416,7 +440,7 @@ def retify_frame(img0, dictionary, ext=3, verbose=False):
         
         # record
         lambdas[inds] = get_dl_model(params2, dxs, dys) + col
-        pickle.dump(lambdas, open('lambdas' + str(ext) + '.dat', 'wb'))
+        pickle.dump(lambdas, open('lambdas_' + str(pyversion) + '_' + str(ext) + '.dat', 'wb'))
 
         # just plot offsets for a few of the rows across the image
         plt.clf()
@@ -429,7 +453,11 @@ def retify_frame(img0, dictionary, ext=3, verbose=False):
         plt.legend()
         plt.xlabel('Column Number')
         plt.ylabel('Wavelength Offset from Middle Row');
-    input('stop')
+
+    if pyversion>=3:        
+        input('stop')
+    else:
+        raw_input('stop')
     return lambdas
 
 ################################################3
@@ -476,8 +504,8 @@ def plot_sky_model(skyref, model):
 
 def trace(img,dictionary, g0=10, g1=85, g2=3, key=3, verbose=False):
     if 'sky' + str(key) in dictionary[img]:
-        sky = dictionary[img]['sky' + str(key)].data
-        image = dictionary[img]['trimmed' + str(key)].data
+        sky = dictionary[img]['sky' + str(key)]
+        image = dictionary[img]['trimmed' + str(key)]
         nosky = image - sky
          
         # get the a pixel coordinate near the image center
@@ -539,14 +567,16 @@ def trace(img,dictionary, g0=10, g1=85, g2=3, key=3, verbose=False):
             ax22.axes.set_ylim(-0.5, 0.5)
             ax22.axes.set_ylabel('Fit Residual (pixels)')
             ax2.set_xlabel('Column Number');
-            input('trace completed')
-
+            if pyversion>=3:        
+                input('trace completed')
+            else:
+                raw_input('trace completed')
     return dictionary
 
 ##################################################
 
 
-def extract(img,dictionary, key=3, edgeleft=30, edgeright=30, othertrace=None, verbose=False):
+def extract(img,dictionary, key=3, edgeleft=30, edgeright=30, othertrace=None, shift=0, verbose=False):
     extract = False
     _grism = dictionary[img]['GRATENAM']
     _slit = dictionary[img]['SLMSKNAM']   
@@ -580,8 +610,8 @@ def extract(img,dictionary, key=3, edgeleft=30, edgeright=30, othertrace=None, v
         print('\n###  Error: trace not found')
         return dictionary
     else:
-        sky = dictionary[img]['sky' + str(key)].data
-        image = dictionary[img]['trimmed' + str(key) ].data
+        sky = dictionary[img]['sky' + str(key)]
+        image = dictionary[img]['trimmed' + str(key) ]
         nosky = image - sky
         
         # get the a pixel coordinate near the image center
@@ -605,7 +635,8 @@ def extract(img,dictionary, key=3, edgeleft=30, edgeright=30, othertrace=None, v
         # sort by slit position
         sort_inds = pos.argsort()
         pos, counts = pos[sort_inds], counts[sort_inds]
-         
+
+        print(pos)
         # fit a spline to model the spatial profile
         t = np.linspace(pos.min() + 2, pos.max() - 2, ny // 2) # spline knot points
         profile_spl = LSQUnivariateSpline(pos, counts, t)
@@ -679,8 +710,11 @@ def extract(img,dictionary, key=3, edgeleft=30, edgeright=30, othertrace=None, v
             ax2 = fig2.add_subplot(2, 1, 2)
             mean, median, std = sigma_clipped_stats(profile_image)
             ax2.imshow(profile_image, vmin = median - 2*std, vmax = median + 2*std)
-            input('is trace ok? ')
-        
+            if pyversion>=3:
+                input('optimal extraction shown on figure 2')
+            else:
+                raw_input('optimal extraction shown on figure 2')
+                
         # same for the sky background
         skybg_opt = (sky * profile_image)[ymin:ymax, :].sum(axis=0) / profile_image.sum(axis=0)
         bias_factor_sky = np.median(skybg_basic / skybg_opt)
@@ -696,7 +730,10 @@ def extract(img,dictionary, key=3, edgeleft=30, edgeright=30, othertrace=None, v
             plt.plot(xs, spec_basic, label='basic extraction')
             plt.plot(xs, spec_opt, label='optimal extraction')
             plt.legend()
-            input('extraction completed')
+            if pyversion>=3:
+                input('extraction completed')
+            else:
+                raw_input('extraction completed')                
     return dictionary
                     
 
@@ -927,8 +964,12 @@ def DefFluxCal(obj_wave, obj_flux, stdstar='', mode='spline', polydeg=9,
             plt.ylabel('Observed Counts/S')
             plt.legend()
             plt.show()
-            input('look at the plot')
-
+            
+            if pyversion>=3:
+                input('look at the plot')
+            else:
+                raw_input('look at the plot')
+                
             plt.figure(1)
             plt.clf()
             plt.plot(obj_wave_ds, LogSensfunc, 'ko', label='sensfunc')
