@@ -55,10 +55,12 @@ if __name__ == "__main__":
     
     if _interactive:
         verbose= True
+    else:
+        verbose= False
     #
     #  initialize the dictionary with all the infos
     #
-    dictionary, setup_object, setup_arc, setup_flat = deimosutil.checkalldata(directory=_directory)
+    dictionary, setup_object, setup_arc, setup_flat = deimosutil.checkalldata(directory=_directory,verbose=verbose)
     
     #
     #  check that all data are in the directory and
@@ -73,15 +75,25 @@ if __name__ == "__main__":
             run = False
     
     if run:
-        if verbose:
-            print('READY TO GO!!')
-            print(setup_object)
-            print(setup_arc)
-            print(setup_flat)
         for setup in setup_object:
-            if verbose:
+            for img in setup_object[setup]:
+                for key in [3,7]:
+                    ##################     check if it is a standard and add it to the dictionary  ######################3
+                    print(dictionary[img]['OBJECT'],dictionary[img]['RA'],dictionary[img]['DEC'])
+                    _dec = dictionary[img]['DEC']
+                    _ra = dictionary[img]['RA']
+                    c = SkyCoord(_ra, _dec, frame='icrs',unit=(u.hourangle, u.deg))
+                    _ra  = c.ra.value
+                    _dec = c.dec.value
+                    dd = np.arccos(np.sin(_dec * scal) * np.sin(decstd * scal) +
+                                   np.cos(_dec * scal) * np.cos(decstd * scal) *
+                                   np.cos((_ra - rastd) * scal)) * ((180 / np.pi) * 3600)
+                    if np.min(dd) < 5200:
+                        dictionary[img]['std']= std[np.argmin(dd)]
+                    ######################################################
                 print(setup)
-                                
+                deimos.deimosutil.summary(dictionary)
+                
             if setup[1] == 'LVMslitC':
                 _dir = '_'.join(setup)
                 # trim and rotate dimension 3 and 7
@@ -105,7 +117,6 @@ if __name__ == "__main__":
                             for img in setup_arc[setup]:
                                 if 'trimmed' + str(key)  in dictionary[img]:
                                     image = dictionary[img]['trimmed' + str(key)].data
-                                    print(img,dictionary[img]['OBJECT'])
                                     deimosutil.image_plot(image)
             
                                     if pyversion>=3:
@@ -156,10 +167,16 @@ if __name__ == "__main__":
                         os.mkdir(_dir + '/' + str(key))
                     for img in setup_object[setup]:
                         dosky = True
-                        imgnosky = re.sub('.fits','',img) + '_' + str(key) + '_nosky.fits'
-                        if os.path.isfile(_dir + '/' + str(key) + '/' + imgnosky) and _force is False:
-                            dosky = False
+                        if 'nosky'+str(key) in dictionary[img] and _force==False:
+                            if pyversion>=3:
+                                answ = input('do you want to to sky subtraction again ? [y/n] [n]')
+                            else:
+                                answ = raw_input('do you want to to sky subtraction again ? [y/n] [n]')
+                            if not answ: answ = 'n'
+                            if answ in ['n','N','NO','no']:
+                                dosky = False
                         if dosky:
+                            imgnosky = re.sub('.fits','',img) + '_' + str(key) + '_nosky.fits'
                             if 'trimmed' + str(key) in dictionary[img]:
                                 image = dictionary[img]['trimmed' + str(key)].data
                                 objrows, skymask =  deimosutil.find_sky_object(image, 0.3, key, True)
@@ -198,19 +215,6 @@ if __name__ == "__main__":
                                 hdu2 = dictionary[img]['nosky' + str(key)]
                                 _out = fits.ImageHDU(data=hdu2.data, header=hdu.header)
                                 fits.writeto(_dir + '/' + str(key)  + '/' + imgnosky, _out.data,header=_out.header,overwrite='yes')
-                        else:
-                            print('read nosky image from file')
-                            imgnosky = re.sub('.fits','',img) + '_' + str(key) + '_nosky.fits'
-                            imgtrimmed = re.sub('.fits','',img) + '_' + str(key) + '_trimmed.fits'
-
-                            hdu = fits.open(_dir + '/' + str(key)  + '/' + imgnosky)
-                            nosky = hdu[0].data
-
-                            hdu = fits.open(_dir + '/' + str(key)  + '/' + imgtrimmed)
-                            trimmed = hdu[0].data
-
-                            dictionary[img]['nosky' + str(key)] = nosky
-                            dictionary[img]['sky' + str(key)] = trimmed-nosky
 
                 ###########  trace  #############################
                 if _iraf:
@@ -247,7 +251,10 @@ if __name__ == "__main__":
                         print(img,dictionary[img]['OBJECT'],key)
                         doextraction = True
                         if 'spec_basic'+str(key) in dictionary[img] and _force==False:
-                            answ = raw_input('do you want to extract again ? [y/n] [n]')
+                            if pyversion>=3:
+                                answ = input('do you want to extract again ? [y/n] [n]')
+                            else:
+                                answ = raw_input('do you want to extract again ? [y/n] [n]')
                             if not answ: answ = 'n'
                             if answ in ['n','N','NO','no']:
                                 doextraction = False
@@ -276,7 +283,6 @@ if __name__ == "__main__":
                                 othertrace = None
                             else:
                                 for image in setup_object[setup]:
-                                    print(image)
                                     _shift=0
                                     peak = dictionary[image]['peakpos_' + str(key)]
                                     plt.figure(3)
@@ -386,8 +392,6 @@ if __name__ == "__main__":
                                     input('extraction completed')
                                 else:
                                     raw_input('extraction completed')
-                                
-                raw_input('stop here')
 #    
                 #####  initial wavelengh calibration #############################
                 #
@@ -398,23 +402,26 @@ if __name__ == "__main__":
                 arc = setup_arc[setup][1]
                 for img in setup_object[setup]:
                     for key in [3,7]:
-                        ##################     check if it is a standard and add it to the dictionary  ######################3
-                        print(dictionary[img]['OBJECT'],dictionary[img]['RA'],dictionary[img]['DEC'])
-                        _dec = dictionary[img]['DEC']
-                        _ra = dictionary[img]['RA']
-                        c = SkyCoord(_ra, _dec, frame='icrs',unit=(u.hourangle, u.deg))
-                        _ra  = c.ra.value
-                        _dec = c.dec.value
-                        dd = np.arccos(np.sin(_dec * scal) * np.sin(decstd * scal) +
-                                       np.cos(_dec * scal) * np.cos(decstd * scal) *
-                                       np.cos((_ra - rastd) * scal)) * ((180 / np.pi) * 3600)
-                        if np.min(dd) < 5200:
-                            dictionary[img]['std']= std[np.argmin(dd)]
-                        ######################################################                        
+#                        ##################     check if it is a standard and add it to the dictionary  ######################3
+#                        print(dictionary[img]['OBJECT'],dictionary[img]['RA'],dictionary[img]['DEC'])
+#                        _dec = dictionary[img]['DEC']
+#                        _ra = dictionary[img]['RA']
+#                        c = SkyCoord(_ra, _dec, frame='icrs',unit=(u.hourangle, u.deg))
+#                        _ra  = c.ra.value
+#                        _dec = c.dec.value
+#                        dd = np.arccos(np.sin(_dec * scal) * np.sin(decstd * scal) +
+#                                       np.cos(_dec * scal) * np.cos(decstd * scal) *
+#                                       np.cos((_ra - rastd) * scal)) * ((180 / np.pi) * 3600)
+#                        if np.min(dd) < 5200:
+#                            dictionary[img]['std']= std[np.argmin(dd)]
+#                        ######################################################                        
 
                         dowave = True
                         if 'wave'+str(key) in dictionary[img] and _force==False:
-                            answ = raw_input('do you want to do wavelength solution again ? [y/n] [n]')
+                            if pyversion>=3:
+                                answ = input('do you want to do wavelength solution again ? [y/n] [n]')
+                            else:
+                                answ = raw_input('do you want to do wavelength solution again ? [y/n] [n]')
                             if not answ: answ = 'n'
                             if answ in ['n','N','NO','no']:
                                 dowave = False
@@ -447,7 +454,7 @@ if __name__ == "__main__":
         
                             ################# rigid check with skylines using my sky
                             # load the sky reference
-                            skyref = np.genfromtxt(os.path.join('./','UVES_nightsky_lowres.dat'), names='wav, flux')
+                            skyref = np.genfromtxt(os.path.join(deimos.__path__[0]+'/resources//sky/','UVES_nightsky_lowres.dat'), names='wav, flux')
                             sky = np.array(dictionary[img]['mysky' + str(key)])
                             sky1=sky-np.min(sky)
                             sky1=sky1/np.max(sky1)
@@ -511,9 +518,24 @@ if __name__ == "__main__":
     
     #################################################################3####################################
                 # make response
+                std = []
                 for img in setup_object[setup]:
+                    if 'std' in dictionary[img].keys():
+                        std.append(img)
+                ##############################
+                for img in std:
                     for key in [3,7]:
-                        if 'std' in dictionary[img].keys():
+                        doresponse = True
+                        if 'response'+str(key) in dictionary[img] and _force==False:
+                            print(img,dictionary[img]['OBJECT'],key)
+                            if pyversion>=3:
+                                answ = input('do you want to comute the response again ? [y/n] [n]')
+                            else:
+                                answ = raw_input('do you want to comute the response again ? [y/n] [n]')
+                            if not answ: answ = 'n'
+                            if answ in ['n','N','NO','no']:
+                                doresponse = False
+                        if doresponse:
                             std0 = dictionary[img]['std']
                             liststd = glob.glob(_path[0]+'/resources/onedstds/*/'+std0)
                             if len(liststd):
@@ -529,9 +551,9 @@ if __name__ == "__main__":
                                         plt.plot(x,std_flux,'-',label=re.sub(_path[0],'',standard))
                                     plt.legend()
                                     if pyversion>=3:
-                                        standard = input('which standard do you want to use?')
+                                        standard = input('few standard file in the database, which one do you want to use?')
                                     else:
-                                        standard = raw_input('which standard do you want to use?')
+                                        standard = raw_input('few standard file in the database, which one do you want to use?')
                                     if not standard:
                                         standard = liststd[0]
                                 else:
@@ -540,44 +562,28 @@ if __name__ == "__main__":
                                 dostandard = False
                         else:
                             dostandard = False
-                        
+
+                        print(dictionary[img]['OBJECT'])
+                        print(dostandard)
                         if dostandard:
                             std_spec = dictionary[img]['spec_opt'+str(key)]
                             wave = dictionary[img]['wave'+str(key)]
                                 
-                            plt.clf()
-                            plt.plot(wave, std_spec)
-                            plt.xlabel('Wavelength ($\AA$)')
-                            plt.ylabel('Counts');
-                            
-                            if pyversion>=3:
-                                input('standard spectrum')
-                            else:
-                                raw_input('standard spectrum')
-                                
-                            print(standard)
-                            
                             response = deimosutil.DefFluxCal(wave, std_spec, stdstar=re.sub(_path[0]+'/resources/onedstds/','',standard),\
                                                              mode='spline', polydeg=4, display=verbose, interactive= verbose)
     
                             data = np.genfromtxt(standard)
                             x,y,z = zip(*data)
                             std_flux = deimos.deimosutil._mag2flux(np.array(x),np.array(y))                        
-                            plt.clf()
-                            plt.plot(x,std_flux,'-r')
-                            plt.plot(wave,std_spec*response,'-b')
-                            if pyversion>=3:
-                                input('standard spectrum: done')
-                            else:
-                                raw_input('standard spectrum: done')
                                 
-                            if key==7:
-                                rep = response[::-1]
-                            else:
-                                rep = response
+#                            if key==7:
+#                                rep = response[::-1]
+#                            else:
+#                                rep = response
                                 
                             # save response function in the dictionary
                             dictionary[img]['response'+str(key)] = rep
+                            dictionary[img]['wave'+str(key)] = wave
 
                             # write response function in the directory
                             imgout = re.sub('.fits','',img) + '_' + str(key) +  '_' + dictionary[img]['OBJECT'] + '_response.ascii'
@@ -595,12 +601,10 @@ if __name__ == "__main__":
                 use_standard = {}
                 for key in [3,7]:
                     std=[]
-                    science=[]
+                    use_standard[key] = None
                     for img in setup_object[setup]:
-                        if 'response' + str(key) in dictionary[img]:
+                        if 'response' + str(key) in dictionary[img] and 'std' in dictionary[img]:
                             std.append(img)
-                        else:
-                            science.append(img)
                     if len(std)>1:
                         print(std)
                         if pyversion>=3:
@@ -623,53 +627,68 @@ if __name__ == "__main__":
                     if not os.path.isdir(_dir + '/' + str(key)):
                         os.mkdir(_dir + '/' + str(key))
 
-                    for img in setup_object[setup]:
-                        spec_opt = np.array(dictionary[img]['spec_opt' + str(key)])
-                        wave = np.array(dictionary[img]['wave' + str(key)])
-                        respfn = dictionary[use_standard[key]]['response'+str(key)]
-                        dictionary[img]['spec_flux'+str(key)] = spec_opt * respfn
-                        dictionary[img]['response'+str(key)] = respfn
-                        
-                        if verbose:
-                            plt.figure(2)
-                            plt.clf()
-                            fig2 = plt.figure(2)                            
-                            plt.clf()
-                            plt.plot(wave, spec_opt * respfn, label='Calibrated Spectrum')
-                            if pyversion>=3:
-                                input('look final spectrum')
-                            else:
-                                raw_input('look final spectrum')
-    
-                ################      write file
-                        spec_basic = dictionary[img]['spec_basic' + str(key)]
-                        spec_opt = dictionary[img]['spec_opt' + str(key)]
-                        skybg_opt = dictionary[img]['skybg_opt' + str(key)]
-                        spec_var = dictionary[img]['spec_var' + str(key)]
-                        skymy = dictionary[img]['mysky' + str(key)]
-                        spec_my = dictionary[img]['mybasic' + str(key)]
-                        wave = dictionary[img]['wave' + str(key)]
-                        response = dictionary[img]['response' + str(key)]
-                        spec_flux = np.array(dictionary[img]['spec_flux' + str(key)])
-                        arcspec = np.array(dictionary[img]['arcspec' + str(key)])
-                        
-                        if key==7:
-                            spec_basic =  spec_basic[::-1]
-                            spec_opt   =  spec_opt[::-1]
-                            skybg_opt  =  skybg_opt[::-1]
-                            spec_var   =  spec_var[::-1]
-                            skymy      =  skymy[::-1]
-                            spec_my    =  spec_my[::-1]
-                            wave       =  wave[::-1]
-                            response   =  response[::-1]                          
-                            spec_flux  =  spec_flux[::-1]                     
-                            arcspec    =  arcspec[::-1]
-                            
+                    if use_standard[key]: 
+                        for img in setup_object[setup]:
+                            doflux = True
+                            if 'spec_flux'+str(key) in dictionary[img] and _force==False:
+                                print(img,dictionary[img]['OBJECT'],key)
+                                if pyversion>=3:
+                                    answ = input('do you want to flux calibrate again ? [y/n] [n]')
+                                else:
+                                    answ = raw_input('do you want to flux calibrate again ? [y/n] [n]')
+                                if not answ: answ = 'n'
+                                if answ in ['n','N','NO','no']:
+                                    doflux = False
 
-                        imgout = re.sub('.fits','',img) + '_' + str(key) +  '_' + dictionary[img]['OBJECT'] + '_flux.ascii'
-                        np.savetxt(_dir + '/' + str(key)  + '/' + imgout,np.c_[wave, xs,spec_basic,spec_opt,skybg_opt,spec_var,spec_my,skymy,arcspec, response,spec_flux],\
-                                   header='wave  pixel  spec_basic   spec_opt   skybg_opt   spec_var   mybasic  mysky  arcspec  response spec_flux')
-                                   #\n# shift ' + str(shift))
+                            if doflux:
+                                spec_opt = np.array(dictionary[img]['spec_opt' + str(key)])
+                                wave = np.array(dictionary[img]['wave' + str(key)])
+                                respfn = dictionary[use_standard[key]]['response'+str(key)]
+                                dictionary[img]['spec_flux'+str(key)] = spec_opt * respfn
+                                dictionary[img]['response'+str(key)] = respfn
+                                
+                                if verbose:
+                                    plt.figure(2)
+                                    plt.clf()
+                                    fig2 = plt.figure(2)                            
+                                    plt.clf()
+                                    plt.plot(wave, spec_opt * respfn, label='Calibrated Spectrum')
+                                    if pyversion>=3:
+                                        input('look final spectrum')
+                                    else:
+                                        raw_input('look final spectrum')
+            
+                        ################      write file
+                                spec_basic = dictionary[img]['spec_basic' + str(key)]
+                                spec_opt = dictionary[img]['spec_opt' + str(key)]
+                                skybg_opt = dictionary[img]['skybg_opt' + str(key)]
+                                spec_var = dictionary[img]['spec_var' + str(key)]
+                                skymy = dictionary[img]['mysky' + str(key)]
+                                spec_my = dictionary[img]['mybasic' + str(key)]
+                                wave = dictionary[img]['wave' + str(key)]
+                                response = dictionary[img]['response' + str(key)]
+                                spec_flux = np.array(dictionary[img]['spec_flux' + str(key)])
+                                arcspec = np.array(dictionary[img]['arcspec' + str(key)])
+                                
+                                if key==7:
+                                    spec_basic =  spec_basic[::-1]
+                                    spec_opt   =  spec_opt[::-1]
+                                    skybg_opt  =  skybg_opt[::-1]
+                                    spec_var   =  spec_var[::-1]
+                                    skymy      =  skymy[::-1]
+                                    spec_my    =  spec_my[::-1]
+                                    wave       =  wave[::-1]
+                                    response   =  response[::-1]                          
+                                    spec_flux  =  spec_flux[::-1]                     
+                                    arcspec    =  arcspec[::-1]
+                                        
+                                imgout = re.sub('.fits','',img) + '_' + str(key) +  '_' + dictionary[img]['OBJECT'] + '_flux.ascii'
+                                np.savetxt(_dir + '/' + str(key)  + '/' + imgout,np.c_[wave, xs,spec_basic,spec_opt,skybg_opt,spec_var,\
+                                                                                       spec_my,skymy,arcspec, response,spec_flux],\
+                                           header='wave  pixel  spec_basic   spec_opt   skybg_opt   spec_var   mybasic  mysky  arcspec  response spec_flux')
+                                       #\n# shift ' + str(shift))
+                    else:
+                         print('no standard for ' + str(key))       
 ###########################################################################################
     
     

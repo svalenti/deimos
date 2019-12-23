@@ -87,7 +87,8 @@ def fit_sky(xvals, yvals, image, ky=1, dx=0.5):
 
 ###########################
 
-def checkalldata(directory=False):
+def checkalldata(directory=False,verbose=False):
+    from astropy.io import ascii             
     if directory:
         imglist = glob.glob(directory + '*')
     else:
@@ -127,10 +128,10 @@ def checkalldata(directory=False):
     setup_arc={}
     skip=[]
     for img in dictionary:
-        print(img,dictionary[img]['type'],dictionary[img]['OBJECT'],dictionary[img]['OBSTYPE'])
         if dictionary[img]['type'] is None:
             skip.append(img) 
-            print('skip file ' + str(img))
+            if verbose:
+                print('skip file ' + str(img))
 #            print(dictionary[img])
 #            if pyversion>=3:
 #                answ = input('what is it  [S]kip/[O]bject/[A]rc/[F]lat]  [S] ? ')
@@ -142,7 +143,6 @@ def checkalldata(directory=False):
             _grism = dictionary[img]['GRATENAM']
             _slit = dictionary[img]['SLMSKNAM']        
             setup = (_grism,_slit)
-            print(setup)
             if dictionary[img]['type']=='object':
                 if (_grism,_slit) not in setup_object:
                     setup_object[_grism,_slit]=[]
@@ -165,23 +165,25 @@ def checkalldata(directory=False):
                 imgnosky   = re.sub('.fits','',img) + '_' + str(key) + '_nosky.fits'
                 imgtrace   = re.sub('.fits','',img) + '_' + str(key) + '_trace.ascii'
                 imgex      = re.sub('.fits','',img) + '_' + str(key) +  '_' + dictionary[img]['OBJECT'] + '_ex.ascii'
-                imgflux    = re.sub('.fits','',img) + '_' + str(key) +  '_' + dictionary[img]['OBJECT'] + '_flux.ascii'
                 imgwave    = re.sub('.fits','',img) + '_' + str(key) +  '_' + dictionary[img]['OBJECT'] + '_wave.ascii'
-        
+                imgresponse = re.sub('.fits','',img) + '_' + str(key) +  '_' + dictionary[img]['OBJECT'] + '_response.ascii'
+                imgflux    = re.sub('.fits','',img) + '_' + str(key) +  '_' + dictionary[img]['OBJECT'] + '_flux.ascii'
+
                 if os.path.isfile(_dir + '/' + str(key) + '/' + imgtrimmed):
-                    print('load trimmed image')
                     hdu = fits.open(_dir + '/' + str(key)  + '/' + imgtrimmed)
                     dictionary[img]['trimmed' + str(key)] = hdu[0].data
         
                 if os.path.isfile(_dir + '/' + str(key) + '/' + imgnosky):
-                    print('load nosky image')
                     hdu = fits.open(_dir + '/' + str(key)  + '/' + imgnosky)
-                    dictionary[img]['nosky' + str(key)] = hdu[0].data
-        
-                if os.path.isfile(_dir + '/' + str(key) + '/' + imgtrace):
-                    print('load trimmed data')
-                    aa, meta = readtrace(_dir + '/' + str(key) + '/' + imgtrace)
+                    nosky = hdu[0].data
+                    dictionary[img]['nosky' + str(key)] = nosky
+                    hdu1 = fits.open(_dir + '/' + str(key)  + '/' + imgtrimmed)
+                    trimmed = hdu1[0].data
+                    dictionary[img]['sky' + str(key)] = trimmed - nosky
+
                     
+                if os.path.isfile(_dir + '/' + str(key) + '/' + imgtrace):
+                    aa, meta = readtrace(_dir + '/' + str(key) + '/' + imgtrace)
                     for key1 in meta:
                         if key1 in ['aplow','displine','aphigh']:
                             dictionary[img][key1 + '_' + str(key)] = float(meta[key1])
@@ -189,14 +191,8 @@ def checkalldata(directory=False):
                             dictionary[img][key1 + '_' + str(key)] = re.sub('\[?]?','', meta[key1])
                         dictionary[img]['peakpos_'+str(key)] = aa
                         
-                else:
-                    print('nothing found',imgtrace)
-
-                
-                from astropy.io import ascii                    
                 if os.path.isfile(_dir + '/' + str(key) + '/' + imgflux):
                     aa = ascii.read(_dir + '/' + str(key) + '/' + imgflux)
-                    print(aa)
                     if key==7:
                         dictionary[img]['spec_basic' + str(key)] = aa['spec_basic'][::-1]
                         dictionary[img]['spec_opt' + str(key)] = aa['spec_opt'][::-1]
@@ -219,11 +215,14 @@ def checkalldata(directory=False):
                         dictionary[img]['arcspec' + str(key)] = aa['arcspec']
                         dictionary[img]['response' + str(key)] = aa['response']
                         dictionary[img]['spec_flux' + str(key)] = aa['spec_flux']
-                    
+
+                elif os.path.isfile(_dir + '/' + str(key) + '/' + imgresponse):
+                    aa = ascii.read(_dir + '/' + str(key) + '/' + imgresponse)
+                    dictionary[img]['wave' + str(key)] = aa['wave']
+                    dictionary[img]['response' + str(key)] = aa['response']
+                        
                 elif os.path.isfile(_dir + '/' + str(key) + '/' + imgwave):
                     aa = ascii.read(_dir + '/' + str(key) + '/' + imgwave)
-                    print(aa)
-                    print(imgwave)
                     dictionary[img]['spec_basic' + str(key)] = aa['spec_basic']
                     dictionary[img]['spec_opt' + str(key)] = aa['spec_opt']
                     dictionary[img]['skybg_opt' + str(key)] = aa['skybg_opt']
@@ -255,25 +254,26 @@ def trim_rotate_split(setup_object,setup_flat,setup_arc,dictionary, setup, force
     ############ split files
     for img in setup_object[setup] + setup_flat[setup]+setup_arc[setup]:
         for key in [3,7]:
-            trimimage = False
-            imgtrimmed = re.sub('.fits','',img) + '_' + str(key) + '_trimmed.fits'
-            if os.path.isfile(_dir + '/' + str(key) + '/' + imgtrimmed) and force is False:
-                if verbose:
-                    print('trimmed image already there')
-                trimimage = False
-            else:
-                trimimage = True
-
-            if trimimage:
+            print(img,dictionary[img]['OBJECT'],key)
+            dotrim = True
+            if 'trimmed'+str(key) in dictionary[img] and force==False:
+                if pyversion>=3:
+                    answ = input('do you want to trim again ? [y/n] [n]')
+                else:
+                    answ = raw_input('do you want to trim again ? [y/n] [n]')
+                if not answ: answ = 'n'
+                if answ in ['n','N','NO','no']:
+                    dotrim = False
+            if dotrim:
+                imgtrimmed = re.sub('.fits','',img) + '_' + str(key) + '_trimmed.fits'
                 if key==3:
                     xmin,xmax = 710,860
                 else:
                     xmin,xmax = 1205,1350
-          
-          
+                    
                 _header = dictionary[img]['fits'][key].header
                 _data = np.transpose(dictionary[img]['fits'][key].data)
-          
+                
                 for ll in ['DATASEC','DETSIZE','DETSEC']:
                     del _header[ll]
              
@@ -300,11 +300,11 @@ def trim_rotate_split(setup_object,setup_flat,setup_arc,dictionary, setup, force
                 hdu = dictionary[img]['trimmed' + str(key)]
                 _out = fits.ImageHDU(data=hdu.data, header=hdu.header)
                 fits.writeto(_dir + '/' + str(key)  + '/' + imgtrimmed, _out.data,header=_out.header,overwrite='yes')
-            else:
-                if verbose:
-                    print('read trimmed image from file')
-                hdu = fits.open(_dir + '/' + str(key)  + '/' + imgtrimmed)
-                dictionary[img]['trimmed' + str(key)] = hdu[0].data
+#            else:
+#                if verbose:
+#                    print('read trimmed image from file')
+#                hdu = fits.open(_dir + '/' + str(key)  + '/' + imgtrimmed)
+#                dictionary[img]['trimmed' + str(key)] = hdu[0].data
     return dictionary
 
 ######################################################################
@@ -470,7 +470,6 @@ def retify_frame(img0, dictionary, ext=3, verbose=False):
     # pixel offsets from the refernece pixel
     dxs = xs_stamp - col
     dys = ys_stamp - row
-    print(dxs)
     
     # parameter guess
     guess = (1e-5, 1e-5)
@@ -798,9 +797,6 @@ def extract(img,dictionary, key=3, edgeleft=30, edgeright=30, othertrace=None, s
             ax1 = fig2.add_subplot(2, 1, 1)
             mean, median, std = sigma_clipped_stats(nosky)
             ax1.imshow(nosky, vmin = median - 2*std, vmax = median + 2*std)
-            #print(len(ymin),len(xs))
-            #ax1.plot(xs,ymin,'-c')
-            #ax1.plot(xs,ymax,'-c')
             ax2 = fig2.add_subplot(2, 1, 2)
             mean, median, std = sigma_clipped_stats(profile_image)
             ax2.imshow(profile_image, vmin = median - 2*std, vmax = median + 2*std)
@@ -982,8 +978,7 @@ def DefFluxCal(obj_wave, obj_flux, stdstar='', mode='spline', polydeg=4,
     stdstar2 = stdstar.lower()
     std_dir = os.path.join(os.path.dirname(_path[0]),
                            'deimos','resources', 'onedstds')
-    print(std_dir)
-    print(stdstar2)
+
     if os.path.isfile(os.path.join(std_dir, stdstar2)):
         std_wave, std_mag, std_wth = np.genfromtxt(os.path.join(std_dir, stdstar2),
                                                    skip_header=1, unpack=True)
@@ -1107,9 +1102,7 @@ def fitsens(obj_wave, obj_wave_ds, LogSensfunc, mode, polydeg0, obj_flux,std_wav
 
     lines3 = ax3.plot(_obj_wave, _obj_flux*(10**sensfunc2),'k',
              label='applied sensfunc')
-    print(_obj_wave_ds)
-    print(len(_obj_flux_ds))
-    print(len(sensfunc2))
+
     ax3.plot(_obj_wave_ds, _obj_flux_ds*(10**LogSensfunc), 'bo', label='downsample observed')
     
     plt.legend()
@@ -1118,8 +1111,10 @@ def fitsens(obj_wave, obj_wave_ds, LogSensfunc, mode, polydeg0, obj_flux,std_wav
     kid = fig.canvas.mpl_connect('key_press_event',onkeypress)
 #    cid = fig.canvas.mpl_connect('button_press_event',onclick)
     plt.draw()
-    raw_input('left-click mark bad, right-click unmark, <d> remove. Return to exit ...')
-
+    if pyversion>=3:
+        input('left-click mark bad, right-click unmark, <d> remove. Return to exit ...')
+    else:
+        raw_input('left-click mark bad, right-click unmark, <d> remove. Return to exit ...')
     return sensfunc2
 
 ####################################
@@ -1135,15 +1130,12 @@ def onkeypress(event):
     
     if event.key == 'a' :
         idd.append(idd[-1]+1)
-        print(_obj_wave_ds)
-        print(xdata)
         __obj_wave_ds = list(_obj_wave_ds)
         __obj_wave_ds.append(xdata)
         _obj_wave_ds = np.array(__obj_wave_ds)
         __LogSensfunc = list(_LogSensfunc)
         __LogSensfunc.append(ydata)
         _LogSensfunc = np.array(__LogSensfunc)
-        print(_obj_wave_ds)
         ax2.plot(xdata,ydata,'db',ms=10)
 
     if event.key == 'd' :
@@ -1153,11 +1145,7 @@ def onkeypress(event):
 
     if event.key in ['1','2','3','4','5','6'] :
         _polydeg0=int(event.key)
-        print _polydeg0
-            
-    print(nonincl)
-    print(idd)
-    print('####',event.key)
+        print(_polydeg0)
 
 
     if _mode=='linear':
@@ -1257,9 +1245,25 @@ def writetrace(trace,meta,tablename,output):
     #        output filename
     #
     parameters = ''.join([' %s= %s\n' % (line,meta[line]) for line in meta])[:-2]
-    print(parameters)
     cc = '%s\n %s ' %(tablename,parameters)
 #    dd =[tablename] + ['# %s %s' % (line,meta[line]) for line in meta]+list(trace)
     np.savetxt(output,trace, header= parameters)
     
 ###################################################
+def summary(dictionary):
+    print('#'*20 + '\n')
+    print('IMG          OBJECT   KEY   TRIM  SKY   TRACE  EXTRACTED  WAVE  FLUX  STD  RESPONSE')
+    for img in dictionary:
+        if dictionary[img]['type']=='object':
+            for key in ['3','7']:
+                tt    = 'trimmed' + str(key) in dictionary[img]
+                ss    = 'nosky' + str(key) in dictionary[img]
+                trace = 'peakpos_' + str(key) in dictionary[img]
+                ex    = 'spec_opt'  +str(key) in dictionary[img]
+                wav   = 'wave' + str(key) in dictionary[img]
+                flux  = 'spec_flux' + str(key) in dictionary[img]
+                response  = 'response' + str(key) in dictionary[img]
+                std  = 'std' in dictionary[img]
+                line = '%s  %s %s  %s  %s  %s %s  %s  %s  %s  %s' % (img,dictionary[img]['OBJECT'],key, tt,ss,trace,ex,wav,flux,std,response)
+                print(line)
+    print('#'*20 + '\n')
