@@ -26,10 +26,8 @@ pyversion = sys.version_info[0]
 
 
 poly_arc = {3: np.array([  1.03773471e-05,   5.78487274e-01,   4.45847046e+03]),
-            7: np.array([  2.30350858e-05,  -7.64099597e-01,   9.79141140e+03])}
-
-#fig1 = plt.figure(1)
-#fig2 = plt.figure(2)
+#            7: np.array([  2.30350858e-05,  -7.64099597e-01,   9.79141140e+03]),
+            7: np.array([ -1.39838149e-13,   1.83212231e-09,  -8.83011172e-06, -6.28779911e-01,   9.64233695e+03])}
 
 
 def get_profile_model(params, ys):
@@ -107,8 +105,7 @@ def checkalldata(directory=False):
                 dictionary[img][_header]= hdu[0].header.get(_header)
             else:
                 dictionary[img][_header]= None
-        
-                
+               
         dictionary[img]['type']= None
         if dictionary[img]['SLMSKNAM'] =='GOH_X':
             dictionary[img]['type']= 'focus'
@@ -128,77 +125,186 @@ def checkalldata(directory=False):
     setup_object={}
     setup_flat={}
     setup_arc={}
+    skip=[]
     for img in dictionary:
         print(img,dictionary[img]['type'],dictionary[img]['OBJECT'],dictionary[img]['OBSTYPE'])
         if dictionary[img]['type'] is None:
-            print(dictionary[img])
-            if pyversion>=3:
-                answ = input('what is it?')
-            else:
-                answ = raw_input('what is it?')
+            skip.append(img) 
+            print('skip file ' + str(img))
+#            print(dictionary[img])
+#            if pyversion>=3:
+#                answ = input('what is it  [S]kip/[O]bject/[A]rc/[F]lat]  [S] ? ')
+#                if not answ: answ='S'
+#            else:
+#                answ = raw_input('what is it  [S]kip/[O]bject/[A]rc/[F]lat]  [S] ? ')
+#                if not answ: answ='S'
+        else:
+            _grism = dictionary[img]['GRATENAM']
+            _slit = dictionary[img]['SLMSKNAM']        
+            setup = (_grism,_slit)
+            print(setup)
+            if dictionary[img]['type']=='object':
+                if (_grism,_slit) not in setup_object:
+                    setup_object[_grism,_slit]=[]
+                setup_object[_grism,_slit].append(img)
                 
-        _grism = dictionary[img]['GRATENAM']
-        _slit = dictionary[img]['SLMSKNAM']        
-    
-        if dictionary[img]['type']=='object':
-            if (_grism,_slit) not in setup_object:
-                setup_object[_grism,_slit]=[]
-            setup_object[_grism,_slit].append(img)
+            if dictionary[img]['type']=='arc':
+                if (_grism,_slit) not in setup_arc:
+                    setup_arc[_grism,_slit]=[]
+                setup_arc[_grism,_slit].append(img)
+        
+            if dictionary[img]['type']=='flat':
+                if (_grism,_slit) not in setup_flat:
+                    setup_flat[_grism,_slit]=[]
+                setup_flat[_grism,_slit].append(img)
+        
+            _dir = '_'.join(setup)
             
-        if dictionary[img]['type']=='arc':
-            if (_grism,_slit) not in setup_arc:
-                setup_arc[_grism,_slit]=[]
-            setup_arc[_grism,_slit].append(img)
-    
-        if dictionary[img]['type']=='flat':
-            if (_grism,_slit) not in setup_flat:
-                setup_flat[_grism,_slit]=[]
-            setup_flat[_grism,_slit].append(img)
-            
+            for key in ['3','7']:
+                imgtrimmed = re.sub('.fits','',img) + '_' + str(key) + '_trimmed.fits'
+                imgnosky   = re.sub('.fits','',img) + '_' + str(key) + '_nosky.fits'
+                imgtrace   = re.sub('.fits','',img) + '_' + str(key) + '_trace.ascii'
+                imgex      = re.sub('.fits','',img) + '_' + str(key) +  '_' + dictionary[img]['OBJECT'] + '_ex.ascii'
+                imgflux    = re.sub('.fits','',img) + '_' + str(key) +  '_' + dictionary[img]['OBJECT'] + '_flux.ascii'
+                imgwave    = re.sub('.fits','',img) + '_' + str(key) +  '_' + dictionary[img]['OBJECT'] + '_wave.ascii'
+        
+                if os.path.isfile(_dir + '/' + str(key) + '/' + imgtrimmed):
+                    print('load trimmed image')
+                    hdu = fits.open(_dir + '/' + str(key)  + '/' + imgtrimmed)
+                    dictionary[img]['trimmed' + str(key)] = hdu[0].data
+        
+                if os.path.isfile(_dir + '/' + str(key) + '/' + imgnosky):
+                    print('load nosky image')
+                    hdu = fits.open(_dir + '/' + str(key)  + '/' + imgnosky)
+                    dictionary[img]['nosky' + str(key)] = hdu[0].data
+        
+                if os.path.isfile(_dir + '/' + str(key) + '/' + imgtrace):
+                    print('load trimmed data')
+                    aa, meta = readtrace(_dir + '/' + str(key) + '/' + imgtrace)
+                    
+                    for key1 in meta:
+                        if key1 in ['aplow','displine','aphigh']:
+                            dictionary[img][key1 + '_' + str(key)] = float(meta[key1])
+                        else:    
+                            dictionary[img][key1 + '_' + str(key)] = re.sub('\[?]?','', meta[key1])
+                        dictionary[img]['peakpos_'+str(key)] = aa
+                        
+                else:
+                    print('nothing found',imgtrace)
+
+                
+                from astropy.io import ascii                    
+                if os.path.isfile(_dir + '/' + str(key) + '/' + imgflux):
+                    aa = ascii.read(_dir + '/' + str(key) + '/' + imgflux)
+                    print(aa)
+                    if key==7:
+                        dictionary[img]['spec_basic' + str(key)] = aa['spec_basic'][::-1]
+                        dictionary[img]['spec_opt' + str(key)] = aa['spec_opt'][::-1]
+                        dictionary[img]['skybg_opt' + str(key)] = aa['skybg_opt'][::-1]
+                        dictionary[img]['spec_var' + str(key)] = aa['spec_var'][::-1]
+                        dictionary[img]['mysky' + str(key)] = aa['mysky'][::-1]
+                        dictionary[img]['mybasic' + str(key)] = aa['mybasic'][::-1]
+                        dictionary[img]['wave' + str(key)] = aa['wave'][::-1]
+                        dictionary[img]['arcspec' + str(key)] = aa['arcspec'][::-1]
+                        dictionary[img]['response' + str(key)] = aa['response'][::-1]
+                        dictionary[img]['spec_flux' + str(key)] = aa['spec_flux'][::-1]
+                    else:
+                        dictionary[img]['spec_basic' + str(key)] = aa['spec_basic']
+                        dictionary[img]['spec_opt' + str(key)] = aa['spec_opt']
+                        dictionary[img]['skybg_opt' + str(key)] = aa['skybg_opt']
+                        dictionary[img]['spec_var' + str(key)] = aa['spec_var']
+                        dictionary[img]['mysky' + str(key)] = aa['mysky']
+                        dictionary[img]['mybasic' + str(key)] = aa['mybasic']
+                        dictionary[img]['wave' + str(key)] = aa['wave']
+                        dictionary[img]['arcspec' + str(key)] = aa['arcspec']
+                        dictionary[img]['response' + str(key)] = aa['response']
+                        dictionary[img]['spec_flux' + str(key)] = aa['spec_flux']
+                    
+                elif os.path.isfile(_dir + '/' + str(key) + '/' + imgwave):
+                    aa = ascii.read(_dir + '/' + str(key) + '/' + imgwave)
+                    print(aa)
+                    print(imgwave)
+                    dictionary[img]['spec_basic' + str(key)] = aa['spec_basic']
+                    dictionary[img]['spec_opt' + str(key)] = aa['spec_opt']
+                    dictionary[img]['skybg_opt' + str(key)] = aa['skybg_opt']
+                    dictionary[img]['spec_var' + str(key)] = aa['spec_var']
+                    dictionary[img]['mysky' + str(key)] = aa['mysky']
+                    dictionary[img]['mybasic' + str(key)] = aa['mybasic']
+                    dictionary[img]['wave' + str(key)] = aa['wave']
+                    dictionary[img]['arcspec' + str(key)] = aa['arcspec']
+
+                      
+                elif os.path.isfile(_dir + '/' + str(key) + '/' + imgex):
+                    aa = ascii.read(_dir + '/' + str(key) + '/' + imgex)
+                    dictionary[img]['spec_basic' + str(key)] = aa['spec_basic']
+                    dictionary[img]['spec_opt' + str(key)] = aa['spec_opt']
+                    dictionary[img]['skybg_opt' + str(key)] = aa['skybg_opt']
+                    dictionary[img]['spec_var' + str(key)] = aa['spec_var']
+                    dictionary[img]['mysky' + str(key)] = aa['mysky']
+                    dictionary[img]['mybasic' + str(key)] = aa['mybasic']
+
+                    
+    for img in skip:
+        del dictionary[img]
     return dictionary, setup_object, setup_arc, setup_flat
 
 ########################################################################
 
-def trim_rotate_split(setup_object,setup_flat,setup_arc,dictionary,key):
-    xmin3,xmax3 = 710,860
-    xmin7,xmax7 = 1205,1350
+def trim_rotate_split(setup_object,setup_flat,setup_arc,dictionary, setup, force=False, verbose=False):
+    _dir = '_'.join(setup)
     ############ split files
-    for img in setup_object[key] + setup_flat[key]+setup_arc[key]:
-#        img3=re.sub('.fits','',img) + '_3.fits'
-#        img7=re.sub('.fits','',img) + '_7.fits' 
-        _header3 = dictionary[img]['fits'][3].header
-        _header7 = dictionary[img]['fits'][7].header
-        _data3 = np.transpose(dictionary[img]['fits'][3].data)
-        _data7 = np.transpose(dictionary[img]['fits'][7].data)
+    for img in setup_object[setup] + setup_flat[setup]+setup_arc[setup]:
+        for key in [3,7]:
+            trimimage = False
+            imgtrimmed = re.sub('.fits','',img) + '_' + str(key) + '_trimmed.fits'
+            if os.path.isfile(_dir + '/' + str(key) + '/' + imgtrimmed) and force is False:
+                if verbose:
+                    print('trimmed image already there')
+                trimimage = False
+            else:
+                trimimage = True
 
-        for ll in ['DATASEC','DETSIZE','DETSEC']:
-            del _header3[ll]
-            del _header7[ll]
-        
-        science3 = CCDData(data=_data3,header=_header3,unit=u.adu)
-        science7 = CCDData(data=_data7,header=_header7,unit=u.adu)
-        # add header from the 
-        _header3['exptime'] = dictionary[img]['EXPTIME']
-        _header3['MJD-OBS'] = dictionary[img]['MJD-OBS']
-        _header3['OBJECT']  = dictionary[img]['OBJECT']
-        _header3['OBSTYPE'] = dictionary[img]['OBSTYPE']
-        _header3['AIRMASS'] = dictionary[img]['AIRMASS']
-        _header3['RA']      = dictionary[img]['RA']
-        _header3['DEC']     = dictionary[img]['DEC']
-        
-        _header7['exptime'] = dictionary[img]['EXPTIME']
-        _header7['MJD-OBS'] = dictionary[img]['MJD-OBS']
-        _header7['OBJECT']  = dictionary[img]['OBJECT']
-        _header7['OBSTYPE'] = dictionary[img]['OBSTYPE']
-        _header7['AIRMASS'] = dictionary[img]['AIRMASS']
-        _header7['RA']      = dictionary[img]['RA']
-        _header7['DEC']     = dictionary[img]['DEC']
+            if trimimage:
+                if key==3:
+                    xmin,xmax = 710,860
+                else:
+                    xmin,xmax = 1205,1350
+          
+          
+                _header = dictionary[img]['fits'][key].header
+                _data = np.transpose(dictionary[img]['fits'][key].data)
+          
+                for ll in ['DATASEC','DETSIZE','DETSEC']:
+                    del _header[ll]
+             
+                science = CCDData(data=_data,header=_header,unit=u.adu)
+          
+                # add header from the 
+                _header['exptime'] = dictionary[img]['EXPTIME']
+                _header['MJD-OBS'] = dictionary[img]['MJD-OBS']
+                _header['OBJECT']  = dictionary[img]['OBJECT']
+                _header['OBSTYPE'] = dictionary[img]['OBSTYPE']
+                _header['AIRMASS'] = dictionary[img]['AIRMASS']
+                _header['RA']      = dictionary[img]['RA']
+                _header['DEC']     = dictionary[img]['DEC']
+             
+                #  trim images 
+                trimmed = ccdproc.trim_image(science, fits_section='[:,' + str(xmin) + ':' + str(xmax) + ']')
+                dictionary[img]['trimmed'+str(key)] = trimmed
 
-        #  trim images 
-        trimmed3 = ccdproc.trim_image(science3, fits_section='[:,' + str(xmin3) + ':' + str(xmax3) + ']')
-        trimmed7 = ccdproc.trim_image(science7, fits_section='[:,' + str(xmin7) + ':' + str(xmax7) + ']')
-        dictionary[img]['trimmed3'] = trimmed3
-        dictionary[img]['trimmed7'] = trimmed7
+                if not os.path.isdir(_dir):
+                    os.mkdir(_dir)
+                if not os.path.isdir(_dir + '/' + str(key)):
+                    os.mkdir(_dir + '/' + str(key))
+
+                hdu = dictionary[img]['trimmed' + str(key)]
+                _out = fits.ImageHDU(data=hdu.data, header=hdu.header)
+                fits.writeto(_dir + '/' + str(key)  + '/' + imgtrimmed, _out.data,header=_out.header,overwrite='yes')
+            else:
+                if verbose:
+                    print('read trimmed image from file')
+                hdu = fits.open(_dir + '/' + str(key)  + '/' + imgtrimmed)
+                dictionary[img]['trimmed' + str(key)] = hdu[0].data
     return dictionary
 
 ######################################################################
@@ -210,7 +316,7 @@ def makeflat(setup_flat,dictionary,key):
     flatlist = []
     for img in setup_flat[key]:
         if 'trimmed3' in dictionary[img]:
-            flatlist.append(dictionary[img]['trimmed3'].data)
+            flatlist.append(dictionary[img]['trimmed3'])
             masterflat3 = np.mean(flatlist,axis=0)
         else:
             print('ERROR: Flat not trimmed3')
@@ -219,7 +325,7 @@ def makeflat(setup_flat,dictionary,key):
     flatlist = []
     for img in setup_flat[key]:
         if 'trimmed7' in dictionary[img]:
-            flatlist.append(dictionary[img]['trimmed7'].data)
+            flatlist.append(dictionary[img]['trimmed7'])
             masterflat7 = np.mean(flatlist,axis=0)
         else:
             print('ERROR: Flat not trimmed7')
@@ -227,14 +333,14 @@ def makeflat(setup_flat,dictionary,key):
 
 ###############################################################
 
-def image_plot(image):
+def image_plot(image,frame=3):
     # determine the image pixel distribution (used for displaying below)
     sample = sigma_clip(image)
     vmin = sample.mean() - 1 * sample.std()
     vmax = sample.mean() + 3 * sample.std()
     yvals, xvals = np.indices(image.shape)
     extent = (xvals.min(), xvals.max(), yvals.min(), yvals.max())
-    plt.figure(1)
+    plt.figure(frame)
     plt.imshow(image, origin='lower', cmap='gray', aspect='auto', vmin=vmin, vmax=vmax, extent=extent)
     plt.xlabel('Column Number')
     plt.ylabel('Row Number');
@@ -307,7 +413,7 @@ def find_sky_object(image,objectcut=0.2,key=3,interactive=False):
 #    skymask[w] = False
 
     if interactive:
-        plt.figure(1)
+        plt.figure(3)
         plt.clf()
         plt.imshow(skymask, origin='lower', aspect='auto');
         
@@ -324,7 +430,7 @@ def retify_frame(img0, dictionary, ext=3, verbose=False):
     
     # show the mask
     if verbose:
-        plt.figure(1)
+        plt.figure(3)
         plt.clf()
         plt.imshow(skymask, origin='lower', aspect='auto');
         if pyversion>=3:
@@ -352,7 +458,7 @@ def retify_frame(img0, dictionary, ext=3, verbose=False):
     if verbose:
         image_plot(stamp)
         # plot stamp values against column numbers
-        plt.figure(1)
+        plt.figure(3)
         plt.clf()
         plt.plot(xs_stamp.ravel(), stamp.ravel(), 'r.');
         plt.xlabel('Column Number'), plt.ylabel('Counts');
@@ -371,7 +477,7 @@ def retify_frame(img0, dictionary, ext=3, verbose=False):
 
     # get the wavelength offsets and plot vs. counts
     dls = get_dl_model(guess, dxs, dys)
-    plt.figure(1)
+    plt.figure(3)
     plt.clf()
     plt.plot(dls.ravel(), stamp.ravel(), 'r.')
     plt.xlabel('Wavelength Offset')
@@ -384,10 +490,10 @@ def retify_frame(img0, dictionary, ext=3, verbose=False):
     # fit a spline to the data and plot
     x, y, spl = get_profile_spl(dls, stamp)
 
-    plt.figure(1)
+    plt.figure(3)
     plt.clf()
-    fig1= plt.figure(1)
-    ax1 = fig1.add_subplot(2, 1, 2)
+    fig3= plt.figure(3)
+    ax1 = fig3.add_subplot(2, 1, 2)
 #    fig, axarr = plt.subplots(2, sharex=True)
     ax1.plot(x, y, 'r.')
     ax1.plot(x, spl(x))
@@ -676,18 +782,6 @@ def extract(img,dictionary, key=3, edgeleft=30, edgeright=30, othertrace=None, s
         spec_basic = sumsource.sum(axis=0)
         skybg_basic = sumsky.sum(axis=0)
 
-#        
-#        # calculate the sum
-#        spec_basic = nosky[ymin:ymax, :].sum(axis=0)
-#        if verbose:
-#            print(ymin,ymax)
-#            input('stop here')
-#            
-#        # sky background
-#        skybg_basic = np.array(sky)[ymin:ymax, :].sum(axis=0)
-#
-#        ######################################################
-
 
         
         # calculate the weighted average (for each column)
@@ -846,9 +940,8 @@ def _mag2flux(wave, mag, zeropt=48.60):
 
 ###########################################################################
 
-
-def DefFluxCal(obj_wave, obj_flux, stdstar='', mode='spline', polydeg=9,
-               display=False):
+def DefFluxCal(obj_wave, obj_flux, stdstar='', mode='spline', polydeg=4,
+               display=False, interactive=False):
     """
 
     Parameters
@@ -931,68 +1024,242 @@ def DefFluxCal(obj_wave, obj_flux, stdstar='', mode='spline', polydeg=9,
         if mode not in ('linear', 'spline', 'poly'):
             mode = 'spline'
             print("WARNING: invalid mode set in DefFluxCal. Changing to spline")
-
+            
         # actually fit the log of this sensfunc ratio
         # since IRAF does the 2.5*log(ratio), everything in mag units!
         LogSensfunc = np.log10(ratio)
 
-        # interpolate back on to observed wavelength grid
-        if mode=='linear':
-            sensfunc2 = np.interp(obj_wave, obj_wave_ds, LogSensfunc)
-        elif mode=='spline':
-            spl = UnivariateSpline(obj_wave_ds, LogSensfunc, ext=0, k=2 ,s=0.0025)
-            sensfunc2 = spl(obj_wave)
-        elif mode=='poly':
-            fit = np.polyfit(obj_wave_ds, LogSensfunc, polydeg)
-            sensfunc2 = np.polyval(fit, obj_wave)
+        if interactive==True:
+            again=True
+            while again ==True:
+                if pyversion>=3:
+                    mode = input('which mode [linear/spline/poly] [spline]? ')
+                else:
+                    mode= raw_input('which mode [linear/spline/poly] [spline]? ')
+                    
+                sensfunc2 = fitsens(obj_wave, obj_wave_ds, LogSensfunc, mode, polydeg, obj_flux, std_wave, std_flux, obj_flux_ds)
+                if pyversion>=3:
+                    again = input('again [y/n/]? [y] ')
+                else:
+                    again = raw_input('again [y/n]? [y] ')
+                if not again: again = True
+                if again in ['Yes','y','yes','YES']:
+                    again = True
 
-        if display is True:
-            plt.figure(1)
-            plt.clf()
-            plt.plot(std_wave, std_flux, 'r', alpha=0.5, label='standard flux')
-            plt.xlabel('Wavelength')
-            plt.ylabel('Standard Star Flux')
-            plt.legend()
-            plt.show()
-
-            plt.figure(2)
-            plt.clf()
-            plt.plot(obj_wave, obj_flux, 'k', label='observed counts')
-            plt.plot(obj_wave_ds, obj_flux_ds, 'bo',
-                    label='downsample observed')
-            plt.xlabel('Wavelength')
-            plt.ylabel('Observed Counts/S')
-            plt.legend()
-            plt.show()
-            
-            if pyversion>=3:
-                input('look at the plot')
-            else:
-                raw_input('look at the plot')
-                
-            plt.figure(1)
-            plt.clf()
-            plt.plot(obj_wave_ds, LogSensfunc, 'ko', label='sensfunc')
-            plt.plot(obj_wave, sensfunc2, label='interpolated sensfunc')
-            plt.xlabel('Wavelength')
-            plt.ylabel('log Sensfunc')
-            plt.legend()
-            plt.show()
-
-            plt.figure(2)
-            plt.clf()
-            plt.plot(obj_wave, obj_flux*(10**sensfunc2),'k',
-                        label='applied sensfunc')
-            plt.plot(std_wave, std_flux, 'ro', alpha=0.5, label='standard flux')
-            plt.xlabel('Wavelength')
-            plt.ylabel('Standard Star Flux')
-            plt.legend()
-            plt.show()
+        else:
+            sensfunc2 = fitsens(obj_wave, obj_wave_ds, LogSensfunc, mode, polydeg0, obj_flux,std_wave, std_flux)
     else:
         sensfunc2 = np.zeros_like(obj_wave)
         print('ERROR: in DefFluxCal no valid standard star file found at ')
-        print(os.path.join(std_dir, stdstar2))
+    print(os.path.join(std_dir, stdstar2))
 
     return 10**sensfunc2
 
-###############################################
+####################################
+
+def fitsens(obj_wave, obj_wave_ds, LogSensfunc, mode, polydeg0, obj_flux,std_wave, std_flux, obj_flux_ds):
+    global idd, _obj_wave, _LogSensfunc, _polydeg0, _mode, lines, lines2,lines3, _obj_wave_ds, ax2, ax22, fig,\
+        _obj_flux, _std_wave, _std_flux, nonincl, ax3, _obj_flux_ds
+    fig = plt.figure(1)
+    plt.clf()
+    ax2 = fig.add_subplot(3, 1, 1)
+    ax22 = fig.add_subplot(3, 1, 2)
+    ax3 = fig.add_subplot(3, 1, 3)
+    _obj_wave = obj_wave
+    _obj_flux = obj_flux
+    _std_wave = std_wave 
+    _std_flux = std_flux
+    _obj_wave_ds  = obj_wave_ds
+    _obj_flux_ds  = obj_flux_ds
+    _LogSensfunc = LogSensfunc
+    idd = range(len(obj_wave_ds))
+    _mode = mode
+    _polydeg0 = polydeg0
+    nonincl = []
+    
+    if not mode:
+        mode='spline'        
+    if mode=='linear':
+        sensfunc2 = np.interp(obj_wave, obj_wave_ds, LogSensfunc)
+    elif mode=='spline':
+        spl = UnivariateSpline(obj_wave_ds, LogSensfunc, ext=0, k=2 ,s=0.0025)
+        sensfunc2 = spl(obj_wave)
+    elif mode=='poly':
+        if pyversion>=3:
+            polydeg0 = input('polydeg ? [4] ' )
+        else:
+            polydeg0 = raw_input('polydeg ? [4] ')
+        if not polydeg0: polydeg0 = 4
+        
+        fit = np.polyfit(obj_wave_ds, LogSensfunc, float(polydeg0))
+        sensfunc2 = np.polyval(fit, obj_wave)
+
+    
+    ax2.plot(_obj_wave_ds, _LogSensfunc, 'ko', label='sensfunc')
+    lines =    ax2.plot(_obj_wave, sensfunc2, '-b', label='interpolated sensfunc')
+    ax2.set_xlabel('Wavelength')
+    ax2.set_ylabel('log Sensfunc')
+
+    lines2 = ax22.plot(obj_wave, obj_flux*(10**sensfunc2),'k',
+             label='applied sensfunc')
+    ax22.plot(std_wave, std_flux, 'ro', alpha=0.5, label='standard flux')
+
+
+    lines3 = ax3.plot(_obj_wave, _obj_flux*(10**sensfunc2),'k',
+             label='applied sensfunc')
+    print(_obj_wave_ds)
+    print(len(_obj_flux_ds))
+    print(len(sensfunc2))
+    ax3.plot(_obj_wave_ds, _obj_flux_ds*(10**LogSensfunc), 'bo', label='downsample observed')
+    
+    plt.legend()
+    plt.show()
+        
+    kid = fig.canvas.mpl_connect('key_press_event',onkeypress)
+#    cid = fig.canvas.mpl_connect('button_press_event',onclick)
+    plt.draw()
+    raw_input('left-click mark bad, right-click unmark, <d> remove. Return to exit ...')
+
+    return sensfunc2
+
+####################################
+def onkeypress(event):
+    global idd, _obj_wave, _LogSensfunc, _polydeg0, _mode, lines, lines2, lines3, _obj_wave_ds, ax2, ax22, fig,\
+        _obj_flux, _std_wave, _std_flux, nonincl, ax3, _obj_flux_ds
+
+    
+    xdata,ydata = event.xdata,event.ydata
+    dist = np.sqrt((xdata-np.array(_obj_wave_ds))**2+(ydata-np.array(_LogSensfunc))**2)
+    ii = np.argmin(dist)
+    
+    
+    if event.key == 'a' :
+        idd.append(idd[-1]+1)
+        print(_obj_wave_ds)
+        print(xdata)
+        __obj_wave_ds = list(_obj_wave_ds)
+        __obj_wave_ds.append(xdata)
+        _obj_wave_ds = np.array(__obj_wave_ds)
+        __LogSensfunc = list(_LogSensfunc)
+        __LogSensfunc.append(ydata)
+        _LogSensfunc = np.array(__LogSensfunc)
+        print(_obj_wave_ds)
+        ax2.plot(xdata,ydata,'db',ms=10)
+
+    if event.key == 'd' :
+        idd.remove(ii)
+        for i in range(len(_obj_wave_ds)):
+            if i not in idd: nonincl.append(i)
+
+    if event.key in ['1','2','3','4','5','6'] :
+        _polydeg0=int(event.key)
+        print _polydeg0
+            
+    print(nonincl)
+    print(idd)
+    print('####',event.key)
+
+
+    if _mode=='linear':
+        sensfunc2 = np.interp(_obj_wave, _obj_wave_ds[idd], _LogSensfunc[idd])
+    elif _mode=='spline':
+        spl = UnivariateSpline(np.array(_obj_wave_ds)[idd], np.array(_LogSensfunc)[idd], ext=0, k=2 ,s=0.0025)
+        sensfunc2 = spl(_obj_wave)
+    elif _mode=='poly':
+        print('type the order of the polyfit in the figure')
+        fit = np.polyfit(np.array(_obj_wave_ds)[idd], np.array(_LogSensfunc)[idd], float(_polydeg0))
+        sensfunc2 = np.polyval(fit, _obj_wave)
+
+    ax2.plot(_obj_wave_ds, _LogSensfunc,'ok')
+    ax2.plot(np.array(_obj_wave_ds)[nonincl], np.array(_LogSensfunc)[nonincl],'ow')
+    lines.pop(0).remove()
+    lines2.pop(0).remove()
+    lines3.pop(0).remove()
+    
+    lines =  ax2.plot(_obj_wave, sensfunc2, '-b', label='interpolated sensfunc')
+
+    lines2 = ax22.plot(_obj_wave, _obj_flux*(10**sensfunc2),'k',
+             label='applied sensfunc')
+    ax22.plot(_std_wave, _std_flux, 'ro', alpha=0.5, label='standard flux')
+
+    lines3 = ax3.plot(_obj_wave, _obj_flux*(10**sensfunc2),'k',
+             label='applied sensfunc')
+#    ax3.plot(np.array(_obj_wave_ds)[idd], np.array(_obj_flux_ds)[idd]*(10**np.array(_LogSensfunc)[idd]), 'bo', label='downsample observed')
+    ax3.plot(np.array(_obj_wave_ds)[nonincl], np.array(_obj_flux_ds)[nonincl]*(10**np.array(_LogSensfunc)[nonincl]), 'ro', label='')
+    plt.draw()
+    
+###############################################################################
+
+
+def checkwavelength_arc(xx1, yy1, xx2, yy2, xmin, xmax, inter=True):
+    import numpy as np
+
+    minimo = max(min(xx1), min(xx2)) + 50
+    massimo = min(max(xx1), max(xx2)) - 50
+    yy1 = [0 if e < 0 else e for e in np.array(yy1)]
+    yy2 = [0 if e < 0 else e for e in np.array(yy2)]
+    _shift, integral = [], []
+    for shift in range(-500, 500, 1):
+        xxnew = xx1 + shift / 10.
+        yy2interp = np.interp(xxnew, xx2, yy2)
+        yy2timesyy = yy2interp * yy1
+        xxcut = np.compress((np.array(xxnew) >= minimo) & (
+            np.array(xxnew) <= massimo), np.array(xxnew))
+        yycut = np.compress((np.array(xxnew) >= minimo) & (
+            np.array(xxnew) <= massimo), np.array(yy2timesyy))
+        integrale = np.trapz(yycut, xxcut)
+        integral.append(integrale)
+        _shift.append(shift / 10.)
+    result = _shift[integral.index(max(integral))]
+    if inter:
+        # import matplotlib as mpl
+        #   mpl.use("TKAgg")
+        plt.figure(3)
+        plt.clf()
+        ratio = np.trapz(yy1, xx1) / np.trapz(yy2, xx2)
+        print(ratio)
+        yy3 = np.array(yy2) * float(ratio)
+        xx4 = xx1 + result
+        plt.plot(xx1, yy1, label='spectrum')
+        plt.plot(xx2, yy3, label='reference sky')
+        plt.plot(xx4, yy1, label='shifted spectrum')
+        plt.legend(numpoints=1, markerscale=1.5)
+        if xmin != '' and xmax != '':
+            plt.xlim(xmin, xmax)
+    return result
+
+##################################################################
+
+def readtrace(ascifile):
+    #
+    #  input: filename
+    #  output:
+    #     astropy ascii table,
+    #     dictionary  of parameters
+    #
+    import string
+    from astropy.io import ascii
+    aa = ascii.read(ascifile)
+    bb = [string.split(i,'=') for i in aa.meta['comments']]
+    meta = {i[0]:i[1] for i in bb}
+    # ascii use the first line as title, but I want to file to be easy to plot
+    # also without reading it with ascii
+    aa = np.genfromtxt(ascifile)
+    return aa,meta
+
+#################################################
+def writetrace(trace,meta,tablename,output):
+    #
+    #  input:
+    #        1d array
+    #        meta = dictionary of parameters
+    #        table name
+    #        output filename
+    #
+    parameters = ''.join([' %s= %s\n' % (line,meta[line]) for line in meta])[:-2]
+    print(parameters)
+    cc = '%s\n %s ' %(tablename,parameters)
+#    dd =[tablename] + ['# %s %s' % (line,meta[line]) for line in meta]+list(trace)
+    np.savetxt(output,trace, header= parameters)
+    
+###################################################
