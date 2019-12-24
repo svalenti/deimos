@@ -15,9 +15,11 @@ from scipy.interpolate import UnivariateSpline
 from scipy.interpolate import SmoothBivariateSpline
 from astropy.stats import sigma_clip
 from scipy.optimize import fmin
+from scipy.optimize import minimize
 from scipy.optimize import least_squares
 from scipy.interpolate import interp1d
 import pickle
+from pylab import polyfit, polyval
 from astropy.stats import sigma_clipped_stats
 from deimos import __path__ as _path
 import sys
@@ -1042,7 +1044,7 @@ def DefFluxCal(obj_wave, obj_flux, stdstar='', mode='spline', polydeg=4,
                     again = True
 
         else:
-            sensfunc2 = fitsens(obj_wave, obj_wave_ds, LogSensfunc, mode, polydeg0, obj_flux,std_wave, std_flux)
+            sensfunc2 = fitsens(obj_wave, obj_wave_ds, LogSensfunc, mode, polydeg, obj_flux,std_wave, std_flux, obj_flux_ds)
     else:
         sensfunc2 = np.zeros_like(obj_wave)
         print('ERROR: in DefFluxCal no valid standard star file found at ')
@@ -1244,7 +1246,7 @@ def writetrace(trace,meta,tablename,output):
     #        table name
     #        output filename
     #
-    parameters = ''.join([' %s= %s\n' % (line,meta[line]) for line in meta])[:-2]
+    parameters = ''.join([' %s= %s\n' % (line,meta[line]) for line in meta])[:-1]
     cc = '%s\n %s ' %(tablename,parameters)
 #    dd =[tablename] + ['# %s %s' % (line,meta[line]) for line in meta]+list(trace)
     np.savetxt(output,trace, header= parameters)
@@ -1267,3 +1269,209 @@ def summary(dictionary):
                 line = '%s  %s %s  %s  %s  %s %s  %s  %s  %s  %s' % (img,dictionary[img]['OBJECT'],key, tt,ss,trace,ex,wav,flux,std,response)
                 print(line)
     print('#'*20 + '\n')
+
+###################################################################################
+
+def onkeypress1(event):
+    global _xx,_yy, center, lower, upper, l1,l2,u1,u2, line1, line2, line3, line5
+    
+    xdata,ydata = event.xdata,event.ydata
+    if event.key == '6' :
+        lower = xdata
+    if event.key == '7' :
+        upper = xdata
+    if event.key == '1' :
+        l1 = xdata
+    if event.key == '2' :
+        l2 = xdata
+    if event.key == '3' :
+        u1 = xdata
+    if event.key == '4' :
+        u2 = xdata
+    if event.key == 'c' :
+        center = xdata
+        
+    line1.pop(0).remove()
+    line2.pop(0).remove()
+    line3.pop(0).remove()
+    line5.pop(0).remove()
+    plt.clf()
+    line5 = plt.plot(_yy,_xx,'-b')
+    line1 = plt.plot([l1,l2],[0,0],'-k')
+    line2 = plt.plot([u1,u2],[0,0],'-k')
+    line3 = plt.plot([lower,upper],[1,1],'-k')
+    plt.plot([center],[1],'or')
+    
+def profilespec(data,dispersion):
+    global _xx,_yy, center, lower, upper, l1,l2,u1,u2, line1, line2, line3, line5
+    print("\n##################\n 1 = bg1\n 2 = bg2\n 3 = bg3\n 4 = bg4\n 6 = lower\n 7 = upper\n c = center")
+    fig = plt.figure(1)
+    plt.clf()
+
+    if dispersion is None:
+        xx = data.mean(axis=1)
+    else:
+        xx = data[:,dispersion-50:dispersion+50].mean(axis=1)
+    xx=  (xx - np.min(xx))/np.max(xx)
+    yy = np.arange(len(xx))
+
+    _xx = xx
+    _yy = yy
+    center = np.argmax(_xx)
+    lower = center - 10
+    upper = center + 10
+    l1 = center - 25
+    l2 = center - 20
+    u1 = center + 20
+    u2 = center + 25
+
+    line5 = plt.plot(_yy,_xx,'-b')
+    line1 = plt.plot([l1,l2],[0,0],'-k')
+    line2 = plt.plot([u1,u2],[0,0],'-k')
+    line3 = plt.plot([lower,upper],[1,1],'-k')
+    plt.plot([_yy[center]],[1],'or')
+    kid = fig.canvas.mpl_connect('key_press_event',onkeypress1)
+    plt.draw()
+    if pyversion>=3:
+        input('left-click mark bad, right-click unmark, <d> remove. Return to exit ...')
+    else:
+        raw_input('left-click mark bad, right-click unmark, <d> remove. Return to exit ...')
+    return center, lower, upper, l1,l2,u1,u2
+    
+def poly(x, y, order, rej_lo, rej_hi, niter):
+
+    # x = list of x data
+    # y = list of y data
+    # order = polynomial order
+    # rej_lo = lower rejection threshold (units=sigma)
+    # rej_hi = upper rejection threshold (units=sugma)
+    # niter = number of sigma-clipping iterations
+
+    npts = []
+    iiter = 0
+    iterstatus = 1
+
+    # sigma-clipping iterations
+    rejected=[]
+    while iiter < niter and iterstatus > 0:
+        iterstatus = 0
+        tmpx = []
+        tmpy = []
+        npts.append(len(x))
+        coeffs = polyfit(x, y, order)
+        fit = polyval(coeffs, x)
+
+        # calculate sigma of fit
+
+        sig = 0
+        for ix in range(npts[iiter]):
+            sig = sig + (y[ix] - fit[ix]) ** 2
+        sig = math.sqrt(sig / (npts[iiter] - 1))
+
+        # point-by-point sigma-clipping test
+        for ix in range(npts[iiter]):
+            if y[ix] - fit[ix] < rej_hi * sig and fit[ix] - y[ix] < rej_lo * sig:
+                tmpx.append(x[ix])
+                tmpy.append(y[ix])
+            else:
+                rejected.append([x[ix],y[ix]])
+                iterstatus = 1
+        x = tmpx
+        y = tmpy
+        iiter += 1
+
+    # coeffs = best fit coefficients
+    # iiter = number of sigma clipping iteration before convergence
+    return coeffs, iiter, rejected
+
+########################################
+
+def tracenew(img, dictionary, key, step, verbose, polyorder, sigma, niteration):
+    data = dictionary[img]['nosky'+str(key)]
+    dispersion= None
+    if verbose:
+        plt.clf()
+        image_plot(data,1)
+        dispersion = raw_input('where do you want to look for the object profile [[a]ll / 300] ? [a] ')
+        if not dispersion: dispersion= 'a'
+        if dispersion in ['a','N','NO','n']: dispersion= None
+        else:
+            dispersion=int(dispersion)
+    center, lower, upper, l1,l2,u1,u2 = profilespec(data,dispersion)
+    if verbose:
+        print(center, lower, upper, l1,l2,u1,u2)
+
+    ny, nx = data.shape
+    # create 1d arays of the possible x and y values
+    xs = np.arange(nx)
+    ys = np.arange(ny)
+         
+    # get the median for each row
+    xx0 = data.mean(axis=1)
+    # the 0.01 is because does not like the zero value
+    profile =  (xx0 - np.min(xx0)+0.01)/np.max(xx0)
+
+    high = 1.
+    fwhm = np.sqrt(center - lower)
+    # starting guess for the profile model
+    guess = (high,center, fwhm)
+    guessbound = [(0.1,1.9),(center-10,center+10),(fwhm/3.,fwhm*2)]
+
+    loop = np.arange(int(step/2),len(data[1]),step)
+    centerv,highv,fwhmv=[],[],[]
+    for ii in loop:
+        xx1 = data[:, ii - int(step/2.): ii + int(step/2.)].mean(axis=1)
+        xx1 =  (xx1 - np.min(xx1)+0.01)/np.max(xx1)
+        params1 = minimize(get_profile_chisq, guess, args=(ys, xx1),bounds=guessbound)
+        if verbose:
+            print("best fit parameters are", params1)
+        model1 = get_profile_model(params1['x'], ys)
+        centerv.append(params1['x'][1])
+        highv.append(params1['x'][0])
+        fwhmv.append(params1['x'][2])
+        
+    polypar = np.polyfit(loop,centerv,polyorder)
+    peakpos = np.polyval(polypar, xs)
+    polypar1,niter,rejected = poly(loop, centerv, polyorder, sigma, sigma, niteration)
+
+    peakpos1 = np.polyval(polypar1, xs)
+    if verbose:
+        plt.clf()
+        image_plot(data,1)
+        plt.plot(loop,centerv,'or')
+        plt.plot(xs,peakpos,'-g')
+        plt.plot(xs,peakpos1,'-c')
+        for line in rejected:
+            plt.plot(line[0],line[1],'om')
+
+    meta={}
+    meta['aplow']=lower-center
+    meta['bckgrfunc']='chebyshev'
+    meta['bckgr_low_reject']=None
+
+    if dispersion:
+        meta['displine']=dispersion
+    else:
+        meta['displine']= 1000
+        
+    meta['aphigh']= upper - center
+    meta['bckgrfunc_iraforder']= 1
+    # this coeff are not used since we give directly the peakpos
+    meta['coeffs'] = [2.0, 4.0, 10.0, 4090.0, -3.961599, -2.403275, 2.146498, -0.08873626]
+    meta['bckgrintervals']= [[l1-center,l2-center],[u1-center,u2-center]]
+    meta['bckgr_niterate']= 5
+    meta['bckgr_high_reject']= 3
+
+    _grism = dictionary[img]['GRATENAM']
+    _slit = dictionary[img]['SLMSKNAM']   
+    setup = (_grism,_slit)
+    _dir = '_'.join(setup)
+    imgtrace = re.sub('.fits','',img) + '_' + str(key) + '_trace.ascii'
+    output = _dir + '/' + str(key)  + '/' + imgtrace
+    writetrace(peakpos1,meta,'trace',output)
+
+    dictionary[img]['peakpos_'+str(key)] = peakpos1
+    
+    return peakpos1,centerv,highv,fwhmv,dictionary
+
+##########################################################################

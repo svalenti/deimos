@@ -1193,6 +1193,7 @@ def opextract_new(img, firstlinetoplot, lastlinetoplot, plot_sample, DISPAXIS, r
         xhi = crossdisp[ind3:ind4]
         yhi = ldata[ind3:ind4]
 
+        print(xlo,ylo,xhi,yhi)
         xtofit = np.hstack((xlo, xhi))
         ytofit = np.hstack((ylo, yhi))
 

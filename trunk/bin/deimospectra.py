@@ -20,7 +20,8 @@ from matplotlib import pylab as plt
 from astropy.io import fits
 import glob
 from deimos import __path__ as _path
-
+from deimos import irafext
+                    
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 std, rastd, decstd, magstd = deimosutil.readstandard('standard_deimos_mab.txt')
@@ -159,13 +160,15 @@ if __name__ == "__main__":
                                 
 ##############################################################################
                 #####################################
-                ##########   sky subtraction    ##################                    
+                ##########   sky subtraction    ##################
+                print('\n#### Sky Subtraction ')                    
                 for key in [3,7]:#lambdas:
                     if not os.path.isdir(_dir):
                         os.mkdir(_dir)
                     if not os.path.isdir(_dir + '/' + str(key)):
                         os.mkdir(_dir + '/' + str(key))
                     for img in setup_object[setup]:
+                        print(img,dictionary[img]['OBJECT'],key)
                         dosky = True
                         if 'nosky'+str(key) in dictionary[img] and _force==False:
                             if pyversion>=3:
@@ -222,7 +225,6 @@ if __name__ == "__main__":
                     # use iraf and add to the dictionary all the result
                     #
                     #
-                    from deimos import irafext
                     for img in setup_object[setup]:
                         for key in [3,7]:
                             _ext_trace = False
@@ -236,13 +238,35 @@ if __name__ == "__main__":
 
                             ######  trace using iraf and write trace in iraf database
                             dictionary = deimos.irafext.extractspectrum(dictionary,img, key, _ext_trace, _dispersionline, verbose, 'obj')                            
-                else:                    
+                else:
+                    step = 50
+                    polyorder = 3
+                    sigma = 4
+                    niteration = 10
                     for img in setup_object[setup]:
                         for key in [3,7]:
-                            if key==3:
-                                dictionary = deimosutil.trace(img,dictionary, 10, 85, 3, key, True)
-                            else:
-                                dictionary = deimosutil.trace(img,dictionary, 10, 60, 7, key, True)
+                            print('\n#### Trace ',img)                    
+                            print(img,dictionary[img]['OBJECT'],key)
+                            dotrace = True
+                            if 'peakpos_'+str(key) in dictionary[img] and _force==False:
+                                if pyversion>=3:
+                                    answ = input('do you want to trace again ? [y/n] [n]')
+                                else:
+                                    answ = raw_input('do you want to trace again ? [y/n] [n]')
+                                if not answ: answ = 'n'
+                                if answ in ['n','N','NO','no']:
+                                    dotrace = False
+                            
+                            if dotrace:
+                                peakpos1,centerv,highv,fwhmv,dictionary = deimos.deimosutil.tracenew(img, dictionary, key, step, True, polyorder, sigma, niteration)
+                                raw_input('go on')
+#                            data = dictionary[img]['nosky'+str(key)]
+#                            center, lower, upper, l1,l2,u1,u2 = deimos.deimosutil.profile(data,dispersion=None)
+#                            print(center, lower, upper, l1,l2,u1,u2)                           
+#                            if key==3:
+#                                dictionary = deimosutil.trace(img,dictionary, 10, 85, 3, key, True)
+#                            else:
+#                                dictionary = deimosutil.trace(img,dictionary, 10, 60, 7, key, True)
                             
                 #####  extraction  #############################
                 for img in setup_object[setup]:
@@ -575,7 +599,8 @@ if __name__ == "__main__":
                             data = np.genfromtxt(standard)
                             x,y,z = zip(*data)
                             std_flux = deimos.deimosutil._mag2flux(np.array(x),np.array(y))                        
-                                
+                            rep = response
+                            
 #                            if key==7:
 #                                rep = response[::-1]
 #                            else:
