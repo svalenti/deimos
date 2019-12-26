@@ -426,7 +426,7 @@ def find_sky_object(image,objectcut=0.2,key=3,interactive=False):
 ###################################################
 
 def retify_frame(img0, dictionary, ext=3, verbose=False):            
-    image = dictionary[img0]['trimmed'+str(ext)].data                
+    image = dictionary[img0]['trimmed'+str(ext)]                
     # this is an arc, we do not need to mask
     skymask = np.ones(image.shape, dtype=bool)
     

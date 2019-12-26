@@ -940,7 +940,7 @@ def extractspectrum(dictionary,img, key, _ext_trace=False, _dispersionline=False
                     dist = int(dist)
                     question = 'no'
                 except:
-                    print '\n### input not valid, try again:'
+                    print('\n### input not valid, try again:')
         else:
             dist = dv['line'][_grism]
 

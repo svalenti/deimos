@@ -11,6 +11,7 @@ from optparse import OptionParser, OptionGroup
 import pyds9
 import os
 import pickle
+import time
 import re
 import sys
 import numpy as np
@@ -31,7 +32,7 @@ pyversion = sys.version_info[0]
 
 # check that ds9 is open 
 plt.ion()
-ds9 = pyds9.DS9()
+ds9 = pyds9.DS9(str(time.time()))
 ds9.set('frame 1')
 ds9.set('scale zscale');
 
@@ -181,7 +182,7 @@ if __name__ == "__main__":
                         if dosky:
                             imgnosky = re.sub('.fits','',img) + '_' + str(key) + '_nosky.fits'
                             if 'trimmed' + str(key) in dictionary[img]:
-                                image = dictionary[img]['trimmed' + str(key)].data
+                                image = dictionary[img]['trimmed' + str(key)]
                                 objrows, skymask =  deimosutil.find_sky_object(image, 0.3, key, True)
                                 
                                 yvals, xvals = np.indices(image.shape)
