@@ -32,7 +32,8 @@ pyversion = sys.version_info[0]
 
 # check that ds9 is open 
 plt.ion()
-ds9 = pyds9.DS9(str(time.time()))
+#ds9 = pyds9.DS9(str(time.time()))
+ds9 = pyds9.DS9('deimos')
 ds9.set('frame 1')
 ds9.set('scale zscale');
 
@@ -63,7 +64,6 @@ if __name__ == "__main__":
     #  initialize the dictionary with all the infos
     #
     dictionary, setup_object, setup_arc, setup_flat = deimosutil.checkalldata(directory=_directory,verbose=verbose)
-    
     #
     #  check that all data are in the directory and
     # 
@@ -108,6 +108,7 @@ if __name__ == "__main__":
                 #   
                 ##
                 lambdas={}
+                lamb={}
                 for key in [3,7]:#lambdas:
                         if os.path.isfile('lambdas_' + str(pyversion) + '_' + str(key) + '.dat'):
                             print('registered found')
@@ -118,7 +119,7 @@ if __name__ == "__main__":
                         if lambdas[key] is None:
                             for img in setup_arc[setup]:
                                 if 'trimmed' + str(key)  in dictionary[img]:
-                                    image = dictionary[img]['trimmed' + str(key)].data
+                                    image = dictionary[img]['trimmed' + str(key)][0].data
                                     deimosutil.image_plot(image)
             
                                     if pyversion>=3:
@@ -134,7 +135,7 @@ if __name__ == "__main__":
                             lambdas[key] = deimosutil.retify_frame(img0, dictionary, key,True)
                             
                         img0 = setup_object[setup][0]
-                        image = dictionary[img0]['trimmed' + str(key)]
+                        image = dictionary[img0]['trimmed' + str(key)][0].data
                         order = 2
                         # get the a pixel coordinate near the image center
                         ny, nx = image.shape
@@ -153,6 +154,8 @@ if __name__ == "__main__":
                         for y in range(ny):
                             c = np.polyfit(cols, lambdas[key][y, cols] - xs[cols], order)
                             lambdafit[y, :] = np.polyval(c, xs) + xs
+
+                        lamb[key] = lambdafit
                         if verbose:
                             if pyversion>=3:
                                 input('lambda solution pixel by pixel found')
@@ -182,10 +185,12 @@ if __name__ == "__main__":
                         if dosky:
                             imgnosky = re.sub('.fits','',img) + '_' + str(key) + '_nosky.fits'
                             if 'trimmed' + str(key) in dictionary[img]:
-                                image = dictionary[img]['trimmed' + str(key)]
+                                image = dictionary[img]['trimmed' + str(key)][0].data
+                                header = dictionary[img]['trimmed' + str(key)][0].header
                                 objrows, skymask =  deimosutil.find_sky_object(image, 0.3, key, True)
                                 
                                 yvals, xvals = np.indices(image.shape)
+                                lambdafit = lamb[key] 
                                 # use the (unmasked) sky background pixels and fit the 2D spline
                                 skyfit = deimosutil.fit_sky(lambdafit[skymask], yvals[skymask], image[skymask])
                                 
@@ -216,8 +221,8 @@ if __name__ == "__main__":
                                 if not os.path.isdir(_dir + '/' + str(key)):
                                     os.mkdir(_dir + '/' + str(key))
                                 imgnosky = re.sub('.fits','',img) + '_' + str(key) + '_nosky.fits'
-                                hdu2 = dictionary[img]['nosky' + str(key)]
-                                _out = fits.ImageHDU(data=hdu2.data, header=hdu.header)
+                                nosky = dictionary[img]['nosky' + str(key)]
+                                _out = fits.ImageHDU(data=nosky, header= header)
                                 fits.writeto(_dir + '/' + str(key)  + '/' + imgnosky, _out.data,header=_out.header,overwrite='yes')
 
                 ###########  trace  #############################
@@ -233,8 +238,9 @@ if __name__ == "__main__":
 
                             ## write nosky file from dictionary
                             imgout = re.sub('.fits','',img) + '_' + str(key) + '_nosky.fits'
-                            hdu = dictionary[img]['nosky' + str(key)]
-                            _out = fits.ImageHDU(data=hdu)
+                            nosky = dictionary[img]['nosky' + str(key)]
+                            header = dictionary[img]['trimmed' + str(key)][0].header
+                            _out = fits.ImageHDU(data=nosky,header=header)
                             fits.writeto(imgout, _out.data,overwrite='yes')
 
                             ######  trace using iraf and write trace in iraf database
@@ -260,7 +266,6 @@ if __name__ == "__main__":
                             
                             if dotrace:
                                 peakpos1,centerv,highv,fwhmv,dictionary = deimos.deimosutil.tracenew(img, dictionary, key, step, True, polyorder, sigma, niteration)
-                                raw_input('go on')
 #                            data = dictionary[img]['nosky'+str(key)]
 #                            center, lower, upper, l1,l2,u1,u2 = deimos.deimosutil.profile(data,dispersion=None)
 #                            print(center, lower, upper, l1,l2,u1,u2)                           
@@ -286,7 +291,7 @@ if __name__ == "__main__":
                             
                         if doextraction:
                             sky = dictionary[img]['sky' + str(key)]
-                            image = dictionary[img]['trimmed' + str(key) ]
+                            image = dictionary[img]['trimmed' + str(key) ][0].data
                             nosky = image - sky
                             ny, nx = nosky.shape
                             xs = np.arange(nx)
@@ -325,6 +330,7 @@ if __name__ == "__main__":
                                         othertrace = image
                                         break
                                     elif answ0 in ['S','s','shift']:
+                                        othertrace = image
                                         answ0='s'
                                         while answ0=='s':
                                             _shift=0
@@ -386,7 +392,7 @@ if __name__ == "__main__":
                             aphigh = dictionary[img]['aphigh_' + str(key)]
                             image  = dictionary[img]['nosky' + str(key)]
                             yvals, xvals = np.indices(image.shape)
-                            skyimage = dictionary[img]['trimmed' + str(key)]
+                            skyimage = dictionary[img]['trimmed' + str(key)][0].data
                             aa = [(yvals> peakpos + aplow) & (yvals < peakpos + aphigh )][0]*1
                             bb = [(yvals< peakpos + aplow) | (yvals > peakpos + aphigh )][0]*1
                             apsum = image * aa
@@ -427,21 +433,9 @@ if __name__ == "__main__":
                 arc = setup_arc[setup][1]
                 for img in setup_object[setup]:
                     for key in [3,7]:
-#                        ##################     check if it is a standard and add it to the dictionary  ######################3
-#                        print(dictionary[img]['OBJECT'],dictionary[img]['RA'],dictionary[img]['DEC'])
-#                        _dec = dictionary[img]['DEC']
-#                        _ra = dictionary[img]['RA']
-#                        c = SkyCoord(_ra, _dec, frame='icrs',unit=(u.hourangle, u.deg))
-#                        _ra  = c.ra.value
-#                        _dec = c.dec.value
-#                        dd = np.arccos(np.sin(_dec * scal) * np.sin(decstd * scal) +
-#                                       np.cos(_dec * scal) * np.cos(decstd * scal) *
-#                                       np.cos((_ra - rastd) * scal)) * ((180 / np.pi) * 3600)
-#                        if np.min(dd) < 5200:
-#                            dictionary[img]['std']= std[np.argmin(dd)]
-#                        ######################################################                        
-
                         dowave = True
+                        print('\n#### wavelength solution: ',img)                    
+                        print(img,dictionary[img]['OBJECT'],key)
                         if 'wave'+str(key) in dictionary[img] and _force==False:
                             if pyversion>=3:
                                 answ = input('do you want to do wavelength solution again ? [y/n] [n]')
@@ -460,7 +454,7 @@ if __name__ == "__main__":
                             peakpos = np.array(dictionary[img]['peakpos_' + str(key)])
                             aplow = dictionary[img]['aplow_' + str(key)]
                             aphigh = dictionary[img]['aphigh_' + str(key)]
-                            imagearc = np.array(dictionary[arc]['trimmed' + str(key)])
+                            imagearc = np.array(dictionary[arc]['trimmed' + str(key)])[0].data
                             ny, nx = imagearc.shape
                             # create 1d arays of the possible x and y values
                             xs = np.arange(nx)

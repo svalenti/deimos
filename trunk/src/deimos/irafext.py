@@ -852,7 +852,7 @@ def delete(listfile):
                 ff = re.sub('\n', '', ff)
                 imglist.append(ff)
     elif ',' in listfile:
-        imglist = string.split(listfile, sep=',')
+        imglist = str.split(listfile, sep=',')
     else:
         imglist = [listfile]
     lista = []
@@ -991,14 +991,18 @@ def extractspectrum(dictionary,img, key, _ext_trace=False, _dispersionline=False
             meta['aplow'] = apparams.aplow
             meta['aphigh'] = apparams.aphigh
             meta['bckgr_niterate'] = dv[_type]['_t_niter'] #apparams.bckgr_niterate
-            meta['bckgr_low_reject'] = None #apparams.bckgr_low_reject
+            meta['bckgr_low_reject'] = 5 #apparams.bckgr_low_reject
             meta['bckgr_high_reject'] = apparams.bckgr_high_reject
             meta['bckgrfunc'] = apparams.bckgrfunc
             meta['bckgrfunc_iraforder'] = apparams.bckgrfunc_iraforder
             meta['displine'] = apparams.displine
+
             for key1 in meta:
-                dictionary[img][key1 + '_' + str(key)] = meta[key1]
-            
+                if key1 in ['aplow','displine','aphigh']:
+                    dictionary[img][key1 + '_' + str(key)] = float(meta[key1])
+                else:    
+                    dictionary[img][key1 + '_' + str(key)] = re.sub('\[?]?','', str(meta[key1]))
+                        
             # write the trace file
             _grism = dictionary[img]['GRATENAM']
             _slit = dictionary[img]['SLMSKNAM']   
@@ -1021,30 +1025,27 @@ def opextract_new(img, firstlinetoplot, lastlinetoplot, plot_sample, DISPAXIS, r
     #
     #
     imroot = re.sub('.fits','',img) + '_' + str(key) + '_nosky'
-    if dictionary:
-        hdu = dictionary[img]['nosky' + str(key)]
-        _out = fits.ImageHDU(data=hdu)
-        fits.writeto(imroot+'.fits', _out.data,overwrite='yes')
-    else:
-        print('this does not work if the nosky image is not already there')
-        
     if '.fits' in imroot:
         imroot = imroot.replace(".fits", "")
-    if '.fit' in imroot:
-        imroot = imroot.replace(".fit", "")
-        
+        if '.fit' in imroot:
+            imroot = imroot.replace(".fit", "")
+
     if dictionary:
+        rawdata = dictionary[img]['nosky' + str(key)]
+        
+        # if other is defined use trace from other
         if other:
             if other not in dictionary:
                 print('error image not in the dictionary')
             else:
                 # use trace from a different file
                 img = other
-        elif img not in dictionary:
-            print('error image not in the dictionary')
+                
+        if img not in dictionary:
+            sys.exit('error image not in the dictionary')
         else:
-            coeffs = np.array(string.split(dictionary[img]['coeffs_' + str(key)],','),float)
-            bckgrintervals = np.reshape(np.array(string.split(dictionary[img]['bckgrintervals_' + str(key)],','),float),(2,2))
+            coeffs = np.array(str.split(dictionary[img]['coeffs_' + str(key)],','),float)
+            bckgrintervals = np.reshape(np.array(str.split(dictionary[img]['bckgrintervals_' + str(key)],','),float),(2,2))
             aplow = float(dictionary[img]['aplow_' + str(key)])
             aphigh = float(dictionary[img]['aphigh_' + str(key)])
             bckgr_niterate = int(dictionary[img]['bckgr_niterate_' + str(key)])
@@ -1055,7 +1056,18 @@ def opextract_new(img, firstlinetoplot, lastlinetoplot, plot_sample, DISPAXIS, r
             displine = float(dictionary[img]['displine_' + str(key)])
     else:
         print('read from iraf')
+#        imroot = re.sub('.fits','',img) + '_' + str(key) + '_nosky'
+        if dictionary:
+            hdu = dictionary[img]['nosky' + str(key)]
+            _out = fits.ImageHDU(data=hdu)
+            fits.writeto(imroot+'.fits', _out.data,overwrite='yes')
+        else:
+            print('this does not work if the nosky image is not already there')
         
+        hdu = fits.open(imroot + '.fits')
+        hdr = hdu[0].header
+        rawdata = hdu[0].data
+                
         if other:
             # use trace from a different file
             apparams = aperture_params(froot=other, dispaxis=DISPAXIS)
@@ -1070,16 +1082,12 @@ def opextract_new(img, firstlinetoplot, lastlinetoplot, plot_sample, DISPAXIS, r
         aplow                = apparams.aplow
         aphigh               = apparams.aphigh             
         bckgr_niterate       = apparams.bckgr_niterate     
-        bckgr_low_reject     = None # apparams.bckgr_low_reject   
+        bckgr_low_reject     = 5 # apparams.bckgr_low_reject   
         bckgr_high_reject    = apparams.bckgr_high_reject  
         bckgrfunc            = apparams.bckgrfunc          
         bckgrfunc_iraforder  = apparams.bckgrfunc_iraforder
         displine             = apparams.displine            
         
-            
-    hdu = fits.open(imroot + '.fits')
-    hdr = hdu[0].header
-    rawdata = hdu[0].data
 
     # If dispersion does not run along the columns, transpose
     # the data array.  Doing this once here means we can assume
@@ -1193,7 +1201,7 @@ def opextract_new(img, firstlinetoplot, lastlinetoplot, plot_sample, DISPAXIS, r
         xhi = crossdisp[ind3:ind4]
         yhi = ldata[ind3:ind4]
 
-        print(xlo,ylo,xhi,yhi)
+        #print(xlo,ylo,xhi,yhi)
         xtofit = np.hstack((xlo, xhi))
         ytofit = np.hstack((ylo, yhi))
 

@@ -173,7 +173,7 @@ def checkalldata(directory=False,verbose=False):
 
                 if os.path.isfile(_dir + '/' + str(key) + '/' + imgtrimmed):
                     hdu = fits.open(_dir + '/' + str(key)  + '/' + imgtrimmed)
-                    dictionary[img]['trimmed' + str(key)] = hdu[0].data
+                    dictionary[img]['trimmed' + str(key)] = hdu
         
                 if os.path.isfile(_dir + '/' + str(key) + '/' + imgnosky):
                     hdu = fits.open(_dir + '/' + str(key)  + '/' + imgnosky)
@@ -181,7 +181,8 @@ def checkalldata(directory=False,verbose=False):
                     dictionary[img]['nosky' + str(key)] = nosky
                     hdu1 = fits.open(_dir + '/' + str(key)  + '/' + imgtrimmed)
                     trimmed = hdu1[0].data
-                    dictionary[img]['sky' + str(key)] = trimmed - nosky
+                    sky = trimmed - nosky
+                    dictionary[img]['sky' + str(key)] = sky
 
                     
                 if os.path.isfile(_dir + '/' + str(key) + '/' + imgtrace):
@@ -278,7 +279,6 @@ def trim_rotate_split(setup_object,setup_flat,setup_arc,dictionary, setup, force
                 
                 for ll in ['DATASEC','DETSIZE','DETSEC']:
                     del _header[ll]
-             
                 science = CCDData(data=_data,header=_header,unit=u.adu)
           
                 # add header from the 
@@ -292,7 +292,7 @@ def trim_rotate_split(setup_object,setup_flat,setup_arc,dictionary, setup, force
              
                 #  trim images 
                 trimmed = ccdproc.trim_image(science, fits_section='[:,' + str(xmin) + ':' + str(xmax) + ']')
-                dictionary[img]['trimmed'+str(key)] = trimmed
+                dictionary[img]['trimmed'+str(key)] = trimmed.to_hdu()
 
                 if not os.path.isdir(_dir):
                     os.mkdir(_dir)
@@ -300,7 +300,7 @@ def trim_rotate_split(setup_object,setup_flat,setup_arc,dictionary, setup, force
                     os.mkdir(_dir + '/' + str(key))
 
                 hdu = dictionary[img]['trimmed' + str(key)]
-                _out = fits.ImageHDU(data=hdu.data, header=hdu.header)
+                _out = fits.ImageHDU(data=hdu[0].data, header=hdu[0].header)
                 fits.writeto(_dir + '/' + str(key)  + '/' + imgtrimmed, _out.data,header=_out.header,overwrite='yes')
 #            else:
 #                if verbose:
@@ -318,7 +318,7 @@ def makeflat(setup_flat,dictionary,key):
     flatlist = []
     for img in setup_flat[key]:
         if 'trimmed3' in dictionary[img]:
-            flatlist.append(dictionary[img]['trimmed3'])
+            flatlist.append(dictionary[img]['trimmed3'][0].data)
             masterflat3 = np.mean(flatlist,axis=0)
         else:
             print('ERROR: Flat not trimmed3')
@@ -327,7 +327,7 @@ def makeflat(setup_flat,dictionary,key):
     flatlist = []
     for img in setup_flat[key]:
         if 'trimmed7' in dictionary[img]:
-            flatlist.append(dictionary[img]['trimmed7'])
+            flatlist.append(dictionary[img]['trimmed7'][0].data)
             masterflat7 = np.mean(flatlist,axis=0)
         else:
             print('ERROR: Flat not trimmed7')
@@ -426,7 +426,7 @@ def find_sky_object(image,objectcut=0.2,key=3,interactive=False):
 ###################################################
 
 def retify_frame(img0, dictionary, ext=3, verbose=False):            
-    image = dictionary[img0]['trimmed'+str(ext)]                
+    image = dictionary[img0]['trimmed'+str(ext)][0].data                
     # this is an arc, we do not need to mask
     skymask = np.ones(image.shape, dtype=bool)
     
@@ -611,8 +611,8 @@ def plot_sky_model(skyref, model):
 
 def trace(img,dictionary, g0=10, g1=85, g2=3, key=3, verbose=False):
     if 'sky' + str(key) in dictionary[img]:
-        sky = dictionary[img]['sky' + str(key)]
-        image = dictionary[img]['trimmed' + str(key)]
+        sky = dictionary[img]['sky' + str(key)][0].data
+        image = dictionary[img]['trimmed' + str(key)][0].data
         nosky = image - sky
          
         # get the a pixel coordinate near the image center
@@ -905,7 +905,7 @@ def readstandard(standardfile):
             else:
                 dec.append(float(_dec[0]) + ((float(_dec[1]) + (float(_dec[2]) / 60.)) / 60.))
             try:
-                magnitude.append(string.split(i)[3])
+                magnitude.append(str.split(i)[3])
             except:
                 magnitude.append(999)
     return np.array(star), np.array(ra), np.array(dec), np.array(magnitude)
@@ -1056,7 +1056,7 @@ def DefFluxCal(obj_wave, obj_flux, stdstar='', mode='spline', polydeg=4,
 
 def fitsens(obj_wave, obj_wave_ds, LogSensfunc, mode, polydeg0, obj_flux,std_wave, std_flux, obj_flux_ds):
     global idd, _obj_wave, _LogSensfunc, _polydeg0, _mode, lines, lines2,lines3, _obj_wave_ds, ax2, ax22, fig,\
-        _obj_flux, _std_wave, _std_flux, nonincl, ax3, _obj_flux_ds
+        _obj_flux, _std_wave, _std_flux, nonincl, ax3, _obj_flux_ds, _sensfunc2
     fig = plt.figure(1)
     plt.clf()
     ax2 = fig.add_subplot(3, 1, 1)
@@ -1069,13 +1069,15 @@ def fitsens(obj_wave, obj_wave_ds, LogSensfunc, mode, polydeg0, obj_flux,std_wav
     _obj_wave_ds  = obj_wave_ds
     _obj_flux_ds  = obj_flux_ds
     _LogSensfunc = LogSensfunc
-    idd = range(len(obj_wave_ds))
+    idd = list(range(len(obj_wave_ds)))
     _mode = mode
     _polydeg0 = polydeg0
     nonincl = []
+
     
     if not mode:
-        mode='spline'        
+        mode='spline'
+        
     if mode=='linear':
         sensfunc2 = np.interp(obj_wave, obj_wave_ds, LogSensfunc)
     elif mode=='spline':
@@ -1091,25 +1093,29 @@ def fitsens(obj_wave, obj_wave_ds, LogSensfunc, mode, polydeg0, obj_flux,std_wav
         fit = np.polyfit(obj_wave_ds, LogSensfunc, float(polydeg0))
         sensfunc2 = np.polyval(fit, obj_wave)
 
+    _sensfunc2 = sensfunc2
+    _mode = mode
     
     ax2.plot(_obj_wave_ds, _LogSensfunc, 'ko', label='sensfunc')
-    lines =    ax2.plot(_obj_wave, sensfunc2, '-b', label='interpolated sensfunc')
+    lines =    ax2.plot(_obj_wave, _sensfunc2, '-b', label='interpolated sensfunc')
     ax2.set_xlabel('Wavelength')
     ax2.set_ylabel('log Sensfunc')
 
-    lines2 = ax22.plot(obj_wave, obj_flux*(10**sensfunc2),'k',
+    lines2 = ax22.plot(obj_wave, obj_flux*(10**_sensfunc2),'k',
              label='applied sensfunc')
     ax22.plot(std_wave, std_flux, 'ro', alpha=0.5, label='standard flux')
 
 
-    lines3 = ax3.plot(_obj_wave, _obj_flux*(10**sensfunc2),'k',
+    lines3 = ax3.plot(_obj_wave, _obj_flux*(10**_sensfunc2),'k',
              label='applied sensfunc')
 
     ax3.plot(_obj_wave_ds, _obj_flux_ds*(10**LogSensfunc), 'bo', label='downsample observed')
     
     plt.legend()
     plt.show()
-        
+
+    print('\n#####################3\n [a]dd  point, [d]elete point, 1,2,3,[4],5,6 (poly order) \n')    
+    
     kid = fig.canvas.mpl_connect('key_press_event',onkeypress)
 #    cid = fig.canvas.mpl_connect('button_press_event',onclick)
     plt.draw()
@@ -1122,14 +1128,13 @@ def fitsens(obj_wave, obj_wave_ds, LogSensfunc, mode, polydeg0, obj_flux,std_wav
 ####################################
 def onkeypress(event):
     global idd, _obj_wave, _LogSensfunc, _polydeg0, _mode, lines, lines2, lines3, _obj_wave_ds, ax2, ax22, fig,\
-        _obj_flux, _std_wave, _std_flux, nonincl, ax3, _obj_flux_ds
+        _obj_flux, _std_wave, _std_flux, nonincl, ax3, _obj_flux_ds, _sensfunc2
 
-    
+
     xdata,ydata = event.xdata,event.ydata
     dist = np.sqrt((xdata-np.array(_obj_wave_ds))**2+(ydata-np.array(_LogSensfunc))**2)
     ii = np.argmin(dist)
-    
-    
+
     if event.key == 'a' :
         idd.append(idd[-1]+1)
         __obj_wave_ds = list(_obj_wave_ds)
@@ -1145,11 +1150,11 @@ def onkeypress(event):
         for i in range(len(_obj_wave_ds)):
             if i not in idd: nonincl.append(i)
 
-    if event.key in ['1','2','3','4','5','6'] :
+    if event.key in ['1','2','3','4','5','6','7','8','9'] :
         _polydeg0=int(event.key)
         print(_polydeg0)
 
-
+    print(_mode)
     if _mode=='linear':
         sensfunc2 = np.interp(_obj_wave, _obj_wave_ds[idd], _LogSensfunc[idd])
     elif _mode=='spline':
@@ -1159,20 +1164,21 @@ def onkeypress(event):
         print('type the order of the polyfit in the figure')
         fit = np.polyfit(np.array(_obj_wave_ds)[idd], np.array(_LogSensfunc)[idd], float(_polydeg0))
         sensfunc2 = np.polyval(fit, _obj_wave)
-
+        
+    _sensfunc2 = sensfunc2 
     ax2.plot(_obj_wave_ds, _LogSensfunc,'ok')
     ax2.plot(np.array(_obj_wave_ds)[nonincl], np.array(_LogSensfunc)[nonincl],'ow')
     lines.pop(0).remove()
     lines2.pop(0).remove()
     lines3.pop(0).remove()
     
-    lines =  ax2.plot(_obj_wave, sensfunc2, '-b', label='interpolated sensfunc')
+    lines =  ax2.plot(_obj_wave, _sensfunc2, '-b', label='interpolated sensfunc')
 
-    lines2 = ax22.plot(_obj_wave, _obj_flux*(10**sensfunc2),'k',
+    lines2 = ax22.plot(_obj_wave, _obj_flux*(10**_sensfunc2),'k',
              label='applied sensfunc')
     ax22.plot(_std_wave, _std_flux, 'ro', alpha=0.5, label='standard flux')
 
-    lines3 = ax3.plot(_obj_wave, _obj_flux*(10**sensfunc2),'k',
+    lines3 = ax3.plot(_obj_wave, _obj_flux*(10**_sensfunc2),'k',
              label='applied sensfunc')
 #    ax3.plot(np.array(_obj_wave_ds)[idd], np.array(_obj_flux_ds)[idd]*(10**np.array(_LogSensfunc)[idd]), 'bo', label='downsample observed')
     ax3.plot(np.array(_obj_wave_ds)[nonincl], np.array(_obj_flux_ds)[nonincl]*(10**np.array(_LogSensfunc)[nonincl]), 'ro', label='')
@@ -1227,10 +1233,10 @@ def readtrace(ascifile):
     #     astropy ascii table,
     #     dictionary  of parameters
     #
-    import string
+    #import string
     from astropy.io import ascii
     aa = ascii.read(ascifile)
-    bb = [string.split(i,'=') for i in aa.meta['comments']]
+    bb = [str.split(i,'=') for i in aa.meta['comments']]
     meta = {i[0]:i[1] for i in bb}
     # ascii use the first line as title, but I want to file to be easy to plot
     # also without reading it with ascii
@@ -1320,10 +1326,10 @@ def profilespec(data,dispersion):
     center = np.argmax(_xx)
     lower = center - 10
     upper = center + 10
-    l1 = center - 25
-    l2 = center - 20
-    u1 = center + 20
-    u2 = center + 25
+    l1 = center - 40
+    l2 = center - 25
+    u1 = center + 25
+    u2 = center + 40
 
     line5 = plt.plot(_yy,_xx,'-b')
     line1 = plt.plot([l1,l2],[0,0],'-k')
@@ -1392,7 +1398,10 @@ def tracenew(img, dictionary, key, step, verbose, polyorder, sigma, niteration):
     if verbose:
         plt.clf()
         image_plot(data,1)
-        dispersion = raw_input('where do you want to look for the object profile [[a]ll / 300] ? [a] ')
+        if pyversion>=3:
+            dispersion = input('where do you want to look for the object profile [[a]ll / 300] ? [a] ')
+        else:
+            dispersion = raw_input('where do you want to look for the object profile [[a]ll / 300] ? [a] ')
         if not dispersion: dispersion= 'a'
         if dispersion in ['a','N','NO','n']: dispersion= None
         else:
@@ -1447,7 +1456,7 @@ def tracenew(img, dictionary, key, step, verbose, polyorder, sigma, niteration):
     meta={}
     meta['aplow']=lower-center
     meta['bckgrfunc']='chebyshev'
-    meta['bckgr_low_reject']=None
+    meta['bckgr_low_reject']= 5
 
     if dispersion:
         meta['displine']=dispersion
@@ -1470,6 +1479,13 @@ def tracenew(img, dictionary, key, step, verbose, polyorder, sigma, niteration):
     output = _dir + '/' + str(key)  + '/' + imgtrace
     writetrace(peakpos1,meta,'trace',output)
 
+    for key1 in meta:
+        print(meta[key1],key1)
+        if key1 in ['aplow','displine','aphigh']:
+            dictionary[img][key1 + '_' + str(key)] = float(meta[key1])
+        else:    
+            dictionary[img][key1 + '_' + str(key)] = re.sub('\[?]?','', str(meta[key1]))
+            
     dictionary[img]['peakpos_'+str(key)] = peakpos1
     
     return peakpos1,centerv,highv,fwhmv,dictionary
