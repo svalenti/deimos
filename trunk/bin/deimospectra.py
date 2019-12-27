@@ -48,11 +48,13 @@ if __name__ == "__main__":
                       help='reduce data in this directory \t [%default]')
     parser.add_option("-F", "--force", dest="force", action="store_true",default=False)
     parser.add_option("--iraf", dest="iraf", action="store_true")
+    parser.add_option("--nosky", dest="nosky", action="store_true")
     parser.add_option("-i", "--interactive", action="store_true",
                       dest='interactive', default=False, help='Interactive \t\t\ [%default]')
     option, args = parser.parse_args()
     _interactive = option.interactive
     _iraf = option.iraf
+    _nsky = option.nosky
     _directory = option.directory
     _force = option.force
     

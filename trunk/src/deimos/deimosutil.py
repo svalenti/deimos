@@ -254,6 +254,7 @@ def checkalldata(directory=False,verbose=False):
 
 def trim_rotate_split(setup_object,setup_flat,setup_arc,dictionary, setup, force=False, verbose=False):
     _dir = '_'.join(setup)
+    slits = {}
     ############ split files
     for img in setup_object[setup] + setup_flat[setup]+setup_arc[setup]:
         for key in [3,7]:
@@ -268,11 +269,25 @@ def trim_rotate_split(setup_object,setup_flat,setup_arc,dictionary, setup, force
                 if answ in ['n','N','NO','no']:
                     dotrim = False
             if dotrim:
+                if key not in slits:
+                    if len(setup_flat[setup]):
+                        imgslit = setup_flat[setup][0]
+                        print('use flats to identify the slit position')
+                    elif len(setup_arc[setup]):
+                        imgslit = setup_arc[setup][0]
+                        print('use arc to identify the slit position')
+                    elif len(setup_object[setup]):
+                        print('use object to identify the slit position')
+                        imgslit = setup_object[setup][0]
+                    
+                    slits[key] = findslit(imgslit,key,verbose=True,cut=0.2)
+
                 imgtrimmed = re.sub('.fits','',img) + '_' + str(key) + '_trimmed.fits'
-                if key==3:
-                    xmin,xmax = 710,860
-                else:
-                    xmin,xmax = 1205,1350
+                #
+                # slit of one arcsec is the third one in the multislit
+                #
+                xmin,xmax = slits[key][2]
+                print(xmin,xmax)
                     
                 _header = dictionary[img]['fits'][key].header
                 _data = np.transpose(dictionary[img]['fits'][key].data)
@@ -1112,11 +1127,11 @@ def fitsens(obj_wave, obj_wave_ds, LogSensfunc, mode, polydeg0, obj_flux,std_wav
     ax3.plot(_obj_wave_ds, _obj_flux_ds*(10**LogSensfunc), 'bo', label='downsample observed')
     
     plt.legend()
-    plt.show()
+    plt.draw()
 
     print('\n#####################3\n [a]dd  point, [d]elete point, 1,2,3,[4],5,6 (poly order) \n')    
     
-    kid = fig.canvas.mpl_connect('key_press_event',onkeypress)
+    kid = fig.canvas.mpl_connect('key_press_event', onkeypress)
 #    cid = fig.canvas.mpl_connect('button_press_event',onclick)
     plt.draw()
     if pyversion>=3:
@@ -1410,6 +1425,7 @@ def tracenew(img, dictionary, key, step, verbose, polyorder, sigma, niteration):
     if verbose:
         print(center, lower, upper, l1,l2,u1,u2)
 
+    plt.clf()
     ny, nx = data.shape
     # create 1d arays of the possible x and y values
     xs = np.arange(nx)
@@ -1491,3 +1507,67 @@ def tracenew(img, dictionary, key, step, verbose, polyorder, sigma, niteration):
     return peakpos1,centerv,highv,fwhmv,dictionary
 
 ##########################################################################
+def smoothListGaussian(list, degree=5):
+    # run a gaussian smooth to a list
+    # last points are all the same to keep the same size 
+    window = degree*2-1
+    weight = np.array([1.0]*window)
+    weightGauss = []
+    for i in range(window):
+        i = i-degree+1
+        frac = i/float(window)
+        gauss = 1/(np.exp((4*(frac))**2))
+        weightGauss.append(gauss)
+    weight = np.array(weightGauss)*weight
+    smoothed = [0.0]*(len(list)-window)
+    for i in range(len(smoothed)):
+        smoothed[i] = sum(np.array(list[i:i+window])*weight)/sum(weight)
+
+    smoothed = smoothed + smoothed[-1:]*int(window)
+    return smoothed
+
+############################################################
+def findslit(img,key, verbose=False,cut=None):
+    hdu= fits.open(img)
+    x = hdu[key].data
+    prof = x.mean(axis=0)
+    prof = prof/np.max(prof)
+    xx = np.arange(len(prof))
+    prof = smoothListGaussian(list(prof), degree=5)
+    prof = np.array(prof)
+    if cut is None:
+        cut = np.mean(prof)
+    start = 0
+    end = len(prof)
+    point=[]
+    prof1 = prof
+    xx1 = xx
+    mode = 'g'
+    while end-start> 100:
+        if mode =='g':
+            if len(xx1[prof1>cut]):
+                start = xx1[prof1>cut][0]
+                mode = 'm'
+            else:
+                break
+        else:
+            if len(xx1[prof1>cut]):
+                start = xx1[prof1<cut][0]
+                mode = 'g'
+            else:
+                break
+        point.append(start)
+        prof1 = prof1[(xx1>start)]
+        xx1 = xx1[(xx1>start)]
+
+    yy = np.zeros(len(point))+cut
+    if verbose:
+        plt.clf()
+        plt.plot(xx,prof,'-r')
+        plt.plot(point,yy,'ob')
+
+    ss = np.array(point[:-1])[np.diff(point)>100]+10
+    ee = np.array(point[1:])[np.diff(point)>100]-10
+    return list(zip(ss,ee))
+
+#################################################
