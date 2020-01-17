@@ -16,13 +16,16 @@ import re
 import sys
 import numpy as np
 from scipy.interpolate import LSQBivariateSpline, LSQUnivariateSpline
+from scipy.interpolate import interp1d
+from scipy.optimize import fmin
 import numpy.polynomial.legendre as leg
 from matplotlib import pylab as plt
 from astropy.io import fits
 import glob
 from deimos import __path__ as _path
 from deimos import irafext
-                    
+#os.environ["XPA_METHOD"] = 'unix'
+
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 std, rastd, decstd, magstd = deimosutil.readstandard('standard_deimos_mab.txt')
@@ -33,9 +36,9 @@ pyversion = sys.version_info[0]
 # check that ds9 is open 
 plt.ion()
 #ds9 = pyds9.DS9(str(time.time()))
-ds9 = pyds9.DS9('deimos')
-ds9.set('frame 1')
-ds9.set('scale zscale');
+#ds9 = pyds9.DS9('deimos')
+#ds9.set('frame 1')
+#ds9.set('scale zscale');
 
 # open two plot figures that will be used in the script 
 fig3 = plt.figure(3)
@@ -104,8 +107,16 @@ if __name__ == "__main__":
                 dictionary = deimosutil.trim_rotate_split(setup_object, setup_flat, setup_arc, dictionary, setup, _force)
                         
                 # make masterflat3 and masterflat 7
-                masterflat3 , masterflat7 =  deimosutil.makeflat(setup_flat,dictionary,setup)
-    
+                print(setup_flat)
+                print(setup)
+                masterflat={}
+                masterflat[3] = deimosutil.makeflat(setup_flat,dictionary,setup,3,verbose=True)
+                masterflat[7] = deimosutil.makeflat(setup_flat,dictionary,setup,7,verbose=True)
+                for img in setup_object[setup]:
+                    for key in [3,7]:
+                        dictionary[img]['masterflat'+str(key)]= masterflat[key]
+                        dictionary[img]['trimflat'+str(key)]= dictionary[img]['trimmed'+str(key)][0].data / masterflat[key]
+                input('stop here')
                 ########################################################
                 #   
                 ##
@@ -120,7 +131,9 @@ if __name__ == "__main__":
             
                         if lambdas[key] is None:
                             for img in setup_arc[setup]:
-                                if 'trimmed' + str(key)  in dictionary[img]:
+                                if 'trimflat' + str(key)  in dictionary[img]:
+                                    image = dictionary[img]['trimflat' + str(key)]
+                                elif 'trimmed' + str(key)  in dictionary[img]:
                                     image = dictionary[img]['trimmed' + str(key)][0].data
                                     deimosutil.image_plot(image)
             
@@ -137,7 +150,11 @@ if __name__ == "__main__":
                             lambdas[key] = deimosutil.retify_frame(img0, dictionary, key,True)
                             
                         img0 = setup_object[setup][0]
-                        image = dictionary[img0]['trimmed' + str(key)][0].data
+                        if 'trimflat' + str(key)  in dictionary[img]:
+                            image = dictionary[img0]['trimflat' + str(key)]
+                        else:
+                            image = dictionary[img0]['trimmed' + str(key)][0].data
+
                         order = 2
                         # get the a pixel coordinate near the image center
                         ny, nx = image.shape
@@ -186,11 +203,17 @@ if __name__ == "__main__":
                                 dosky = False
                         if dosky:
                             imgnosky = re.sub('.fits','',img) + '_' + str(key) + '_nosky.fits'
-                            if 'trimmed' + str(key) in dictionary[img]:
-                                image = dictionary[img]['trimmed' + str(key)][0].data
-                                header = dictionary[img]['trimmed' + str(key)][0].header
-                                objrows, skymask =  deimosutil.find_sky_object(image, 0.3, key, True)
-                                
+                            header = dictionary[img]['trimmed' + str(key)][0].header
+                            image = dictionary[img]['trimmed' + str(key)][0].data
+#                            if 'trimflat' + str(key) in dictionary[img]:
+#                                image = dictionary[img]['trimflat' + str(key)]
+#                            elif 'trimmed' + str(key) in dictionary[img]:
+#                                image = dictionary[img]['trimmed' + str(key)][0].data
+#                            else:
+#                                print('warning: no trim and no flat filded image found')
+
+                            if 1==1:    
+                                objrows, skymask =  deimosutil.find_sky_object(image, 0.3, key, True)                                
                                 yvals, xvals = np.indices(image.shape)
                                 lambdafit = lamb[key] 
                                 # use the (unmasked) sky background pixels and fit the 2D spline
@@ -201,12 +224,12 @@ if __name__ == "__main__":
         
                                 if verbose:
                                     #plot the image, sky model, and differece (and/or display in DS9)
-                                    ds9.set('frame 1')
-                                    ds9.set_np2arr(image)
-                                    ds9.set('frame 2')
-                                    ds9.set_np2arr(sky)
-                                    ds9.set('frame 3')
-                                    ds9.set_np2arr(image - sky)
+                                    #ds9.set('frame 1')
+                                    #ds9.set_np2arr(image)
+                                    #ds9.set('frame 2')
+                                    #ds9.set_np2arr(sky)
+                                    #ds9.set('frame 3')
+                                    #ds9.set_np2arr(image - sky)
                                     if pyversion>=3:
                                         input('stop sky subtraction: original sky and residual in ds9')
                                     else:
@@ -292,8 +315,12 @@ if __name__ == "__main__":
                                 doextraction = False
                             
                         if doextraction:
+                            if 'trimflat' + str(key) in dictionary[img]:                           
+                                image = dictionary[img]['trimflat' + str(key) ]
+                            elif 'trimmed' + str(key) in dictionary[img]:
+                                image = dictionary[img]['trimmed' + str(key) ][0].data
+                                
                             sky = dictionary[img]['sky' + str(key)]
-                            image = dictionary[img]['trimmed' + str(key) ][0].data
                             nosky = image - sky
                             ny, nx = nosky.shape
                             xs = np.arange(nx)
@@ -394,7 +421,11 @@ if __name__ == "__main__":
                             aphigh = dictionary[img]['aphigh_' + str(key)]
                             image  = dictionary[img]['nosky' + str(key)]
                             yvals, xvals = np.indices(image.shape)
-                            skyimage = dictionary[img]['trimmed' + str(key)][0].data
+                            if 'trimflat' + str(key) in dictionary[img]:                           
+                                skyimage = dictionary[img]['trimflat' + str(key)]
+                            elif 'trimmed' + str(key) in dictionary[img]:
+                                skyimage = dictionary[img]['trimmed' + str(key)][0].data
+                                
                             aa = [(yvals> peakpos + aplow) & (yvals < peakpos + aphigh )][0]*1
                             bb = [(yvals< peakpos + aplow) | (yvals > peakpos + aphigh )][0]*1
                             apsum = image * aa
@@ -439,6 +470,31 @@ if __name__ == "__main__":
                         print('\n#### wavelength solution: ',img)                    
                         print(img,dictionary[img]['OBJECT'],key)
                         if 'wave'+str(key) in dictionary[img] and _force==False:
+
+                            wave = dictionary[img]['wave' + str(key)]
+                            flux = dictionary[img]['spec_opt' + str(key)]                            
+                            
+                            # load the sky reference
+                            skyref = np.genfromtxt(os.path.join(deimos.__path__[0]+'/resources//sky/','UVES_nightsky_lowres.dat'), names='wav, flux')
+                            # normalize sky spectrum
+                            skyref['flux'] = skyref['flux']-np.min(skyref['flux'])
+                            skyref['flux'] = skyref['flux']/np.max(skyref['flux'])
+                            # interpolate the sky template
+                            skyref_interp = interp1d(skyref['wav'], skyref['flux'], bounds_error=False)
+
+                            # use my sky for wavelength check 
+                            sky = np.array(dictionary[img]['mysky' + str(key)])
+                            # reject negative values
+                            sky[sky<0]=0
+                            # normalize my sky spectrum
+                            sky = sky - np.min(sky)
+                            sky = sky / np.max(sky)
+
+                            plt.figure(1)
+                            plt.clf()
+                            plt.plot(wave,sky,'-r')
+                            plt.plot(skyref['wav'],skyref['flux'],'-b')
+                            
                             if pyversion>=3:
                                 answ = input('do you want to do wavelength solution again ? [y/n] [n]')
                             else:
@@ -456,7 +512,12 @@ if __name__ == "__main__":
                             peakpos = np.array(dictionary[img]['peakpos_' + str(key)])
                             aplow = dictionary[img]['aplow_' + str(key)]
                             aphigh = dictionary[img]['aphigh_' + str(key)]
-                            imagearc = np.array(dictionary[arc]['trimmed' + str(key)])[0].data
+                            
+                            if 'trimflat' + str(key) in dictionary[arc]:                           
+                                imagearc = np.array(dictionary[arc]['trimflat' + str(key)])
+                            elif 'trimmed' + str(key) in dictionary[arc]:
+                                imagearc = np.array(dictionary[arc]['trimmed' + str(key)])[0].data
+                                
                             ny, nx = imagearc.shape
                             # create 1d arays of the possible x and y values
                             xs = np.arange(nx)
@@ -467,36 +528,63 @@ if __name__ == "__main__":
                             arcsum = imagearc * aa
                             arcspec = arcsum.sum(axis=0)
                             dictionary[img]['arcspec' + str(key)] = arcspec
+                            imgout = 'arc_'+ _dir + '_' + str(key) + 'ascii'
+                            np.savetxt(imgout, np.c_[xs, arcspec ], header='pixel  flux ')
                             ################################################################
-        
-                            ##########  fix wavelength solution
-                            p = np.poly1d(deimosutil.poly_arc[key])
-                            wave = p(xs)
-        
-                            ################# rigid check with skylines using my sky
-                            # load the sky reference
-                            skyref = np.genfromtxt(os.path.join(deimos.__path__[0]+'/resources//sky/','UVES_nightsky_lowres.dat'), names='wav, flux')
-                            sky = np.array(dictionary[img]['mysky' + str(key)])
-                            sky1=sky-np.min(sky)
-                            sky1=sky1/np.max(sky1)
-                            skyref['flux'] = skyref['flux']-np.min(skyref['flux'])
-                            skyref['flux'] = skyref['flux']/np.max(skyref['flux'])
+                            reference = os.path.join(deimos.__path__[0]+'/resources/wave/', ('/').join(setup),str(key),'arc.fits')
+                            initial_solution = deimosutil.poly_arc[key]
+                            radius = 10
+                            edges = 7
+                            deg = 5
+                            from deimos import deimoswave
                             
-                            if key==3:
-                                xmin = 4000
-                                xmax = 7000
-                            else:
-                                xmin = 6000
-                                xmax = 10000
-                                sky1 = sky1[::-1]
-                                wave = wave[::-1]
-        
+                            finalsolution = deimos.deimoswave.wavesolution(reference, imgout, key, radius, edges, initial_solution, deg)
+                            print(finalsolution)
+                            p = np.poly1d(finalsolution)
+                            wave = p(xs)
+
+#                            ##########  fix wavelength solution
+#                            p = np.poly1d(deimosutil.poly_arc[key])
+#                            wave = p(xs)        
+                            ################# rigid check with skylines using my sky
+                            
+                            #  write down for testing
+                            #imgout = 'sky_'+ _dir + '_' + str(key) + '.ascii'
+                            #np.savetxt(imgout, np.c_[wave, sky ], header='wave  flux ')
+                            
+                            from deimos import deimoswave
                             if 'std' not in dictionary[img].keys():
-                                shift = deimos.deimosutil.checkwavelength_arc(wave, sky1, skyref['wav'], skyref['flux'], xmin, xmax, inter=True)
+
+                                # check if it is monotonically increasing
+                                dxa = np.diff(wave)
+                                if (dxa > 0).all() is False:
+                                    print('invert vector')
+                                    sky0 = sky[::-1]
+                                    wave0 = wave[::-1]
+                                else:
+                                    sky0 = sky
+                                    wave0 = wave
+                                    
+                                guess = (.000001,  1.00001, 0.00001)
+                                bestparams = fmin(deimos.deimoswave.get_lamp_difference, guess, args=(wave0, sky0, skyref_interp), maxiter=10000)
+                                if (dxa > 0).all() is False:
+                                    shift = bestparams[0]
+                                else:
+                                    shift = (-1) * bestparams[0]
+
+#                                input('stop here ddd')
+#                                shift = deimos.deimosutil.checkwavelength_arc(wave, sky1, skyref['wav'], skyref['flux'], xmin, xmax, inter=True)
                             else:
-                                print('this is a standard, do not do the wave check')
-                                shift = 0
-                            print(shift)
+                                # HERE YIZE WILL ADD THE CHECK 
+                                #
+                                ref_filename = os.path.join(deimos.__path__[0]+'/resources/sky/','std_telluric.fits')
+                                                           
+                                shift, scalefactor = deimos.deimoswave.checkwithtelluric(wave, flux , key, guess, ref_filename)
+                                
+#                                imgout = 'std_'+ _dir + '_' + str(key) + '.ascii'
+#                                np.savetxt(imgout, np.c_[wave, flux ], header='wave  flux ')
+                                
+                            print('shift the spectrum of ',shift)
         
                             #  wavelength calibration in the database
                             wave = p(xs) + shift
@@ -513,7 +601,7 @@ if __name__ == "__main__":
                                 ax2.plot(skyref['wav'], skyref['flux']/np.max(skyref['flux']))
                                 ax2.axes.set_ylabel('Flux Density ($10^{16} f_{\lambda}$)')
                                 ax2.axes.set_xlabel('Wavelength ($\AA$)')
-                                ax2.plot(wave, sky1)
+                                ax2.plot(wave, sky)
                                 
                                 # plot the extracted sky spectrum 
                                 ax22.plot(wave, spec_opt)
@@ -588,10 +676,13 @@ if __name__ == "__main__":
                         print(dostandard)
                         if dostandard:
                             std_spec = dictionary[img]['spec_opt'+str(key)]
+                            _exptime = dictionary[img]['EXPTIME']
+                            _airmass = dictionary[img]['AIRMASS']
                             wave = dictionary[img]['wave'+str(key)]
                                 
                             response = deimosutil.DefFluxCal(wave, std_spec, stdstar=re.sub(_path[0]+'/resources/onedstds/','',standard),\
-                                                             mode='spline', polydeg=4, display=verbose, interactive= verbose)
+                                                             mode='spline', polydeg=4, exptime= _exptime, airmass= _airmass,\
+                                                             display=verbose, interactive= verbose)
     
                             data = np.genfromtxt(standard)
                             x,y,z = zip(*data)
@@ -666,6 +757,11 @@ if __name__ == "__main__":
                                 spec_opt = np.array(dictionary[img]['spec_opt' + str(key)])
                                 wave = np.array(dictionary[img]['wave' + str(key)])
                                 respfn = dictionary[use_standard[key]]['response'+str(key)]
+                                exptime = dictionary[img]['EXPTIME']
+                                airmass = dictionary[img]['AIRMASS']
+                                
+                                spec_opt = deimos.deimosutil.atmoexp_correction(wave, spec_opt, exptime, airmass, site='mauna', verbose = True)
+                                
                                 dictionary[img]['spec_flux'+str(key)] = spec_opt * respfn
                                 dictionary[img]['response'+str(key)] = respfn
                                 
@@ -693,16 +789,16 @@ if __name__ == "__main__":
                                 arcspec = np.array(dictionary[img]['arcspec' + str(key)])
                                 
                                 if key==7:
-                                    spec_basic =  spec_basic[::-1]
-                                    spec_opt   =  spec_opt[::-1]
-                                    skybg_opt  =  skybg_opt[::-1]
-                                    spec_var   =  spec_var[::-1]
-                                    skymy      =  skymy[::-1]
-                                    spec_my    =  spec_my[::-1]
-                                    wave       =  wave[::-1]
-                                    response   =  response[::-1]                          
-                                    spec_flux  =  spec_flux[::-1]                     
-                                    arcspec    =  arcspec[::-1]
+                                    spec_basic =  spec_basic#[::-1]
+                                    spec_opt   =  spec_opt#[::-1]
+                                    skybg_opt  =  skybg_opt#[::-1]
+                                    spec_var   =  spec_var#[::-1]
+                                    skymy      =  skymy#[::-1]
+                                    spec_my    =  spec_my#[::-1]
+                                    wave       =  wave#[::-1]
+                                    response   =  response#[::-1]                          
+                                    spec_flux  =  spec_flux#[::-1]                     
+                                    arcspec    =  arcspec#[::-1]
                                         
                                 imgout = re.sub('.fits','',img) + '_' + str(key) +  '_' + dictionary[img]['OBJECT'] + '_flux.ascii'
                                 np.savetxt(_dir + '/' + str(key)  + '/' + imgout,np.c_[wave, xs,spec_basic,spec_opt,skybg_opt,spec_var,\

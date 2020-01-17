@@ -12,8 +12,10 @@ setup(
     license='LICENSE.txt', 
     description='deimos is a package for spectra reduction',
     long_description=open('README.txt').read(),
-    requires=['numpy','astropy','matplotlib'],
+    requires=['numpy','astropy','matplotlib','ccdproc'],
     packages=['deimos'],
     package_dir={'': 'src/'},
-    package_data={'deimos': ["standard/*txt","standard/*dat","resources/*/*/*","resources/*/*"]}
+    package_data={'deimos': ["standard/*txt","standard/*dat","resources/*/*/*/*",\
+                             "resources/*/*/*/*/*",\
+                             "resources/*/*/*","resources/*/*"]}
 )

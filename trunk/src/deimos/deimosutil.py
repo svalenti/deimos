@@ -13,6 +13,7 @@ from astropy import units as u
 from scipy.interpolate import LSQBivariateSpline, LSQUnivariateSpline
 from scipy.interpolate import UnivariateSpline
 from scipy.interpolate import SmoothBivariateSpline
+from astropy.convolution import convolve, Box1DKernel
 from astropy.stats import sigma_clip
 from scipy.optimize import fmin
 from scipy.optimize import minimize
@@ -23,6 +24,8 @@ from pylab import polyfit, polyval
 from astropy.stats import sigma_clipped_stats
 from deimos import __path__ as _path
 import sys
+import pyds9
+
 pyversion = sys.version_info[0]
 
 
@@ -145,6 +148,7 @@ def checkalldata(directory=False,verbose=False):
             _grism = dictionary[img]['GRATENAM']
             _slit = dictionary[img]['SLMSKNAM']        
             setup = (_grism,_slit)
+            print(setup)
             if dictionary[img]['type']=='object':
                 if (_grism,_slit) not in setup_object:
                     setup_object[_grism,_slit]=[]
@@ -197,16 +201,16 @@ def checkalldata(directory=False,verbose=False):
                 if os.path.isfile(_dir + '/' + str(key) + '/' + imgflux):
                     aa = ascii.read(_dir + '/' + str(key) + '/' + imgflux)
                     if key==7:
-                        dictionary[img]['spec_basic' + str(key)] = aa['spec_basic'][::-1]
-                        dictionary[img]['spec_opt' + str(key)] = aa['spec_opt'][::-1]
-                        dictionary[img]['skybg_opt' + str(key)] = aa['skybg_opt'][::-1]
-                        dictionary[img]['spec_var' + str(key)] = aa['spec_var'][::-1]
-                        dictionary[img]['mysky' + str(key)] = aa['mysky'][::-1]
-                        dictionary[img]['mybasic' + str(key)] = aa['mybasic'][::-1]
-                        dictionary[img]['wave' + str(key)] = aa['wave'][::-1]
-                        dictionary[img]['arcspec' + str(key)] = aa['arcspec'][::-1]
-                        dictionary[img]['response' + str(key)] = aa['response'][::-1]
-                        dictionary[img]['spec_flux' + str(key)] = aa['spec_flux'][::-1]
+                        dictionary[img]['spec_basic' + str(key)] = aa['spec_basic']#[::-1]
+                        dictionary[img]['spec_opt' + str(key)] = aa['spec_opt']#[::-1]
+                        dictionary[img]['skybg_opt' + str(key)] = aa['skybg_opt']#[::-1]
+                        dictionary[img]['spec_var' + str(key)] = aa['spec_var']#[::-1]
+                        dictionary[img]['mysky' + str(key)] = aa['mysky']#[::-1]
+                        dictionary[img]['mybasic' + str(key)] = aa['mybasic']#[::-1]
+                        dictionary[img]['wave' + str(key)] = aa['wave']#[::-1]
+                        dictionary[img]['arcspec' + str(key)] = aa['arcspec']#[::-1]
+                        dictionary[img]['response' + str(key)] = aa['response']#[::-1]
+                        dictionary[img]['spec_flux' + str(key)] = aa['spec_flux']#[::-1]
                     else:
                         dictionary[img]['spec_basic' + str(key)] = aa['spec_basic']
                         dictionary[img]['spec_opt' + str(key)] = aa['spec_opt']
@@ -326,27 +330,17 @@ def trim_rotate_split(setup_object,setup_flat,setup_arc,dictionary, setup, force
 
 ######################################################################
 
-def makeflat(setup_flat,dictionary,key):
-    masterflat3 = False
-    masterflat7 = False
+def makeflat(setup_flat,dictionary,setup,key,verbose=False):
     ######### make master flat 3 
     flatlist = []
-    for img in setup_flat[key]:
-        if 'trimmed3' in dictionary[img]:
-            flatlist.append(dictionary[img]['trimmed3'][0].data)
-            masterflat3 = np.mean(flatlist,axis=0)
-        else:
-            print('ERROR: Flat not trimmed3')
-
-    ######### make master flat 7
-    flatlist = []
-    for img in setup_flat[key]:
-        if 'trimmed7' in dictionary[img]:
-            flatlist.append(dictionary[img]['trimmed7'][0].data)
-            masterflat7 = np.mean(flatlist,axis=0)
-        else:
-            print('ERROR: Flat not trimmed7')
-    return masterflat3, masterflat7
+    for img in setup_flat[setup]:
+        if 'trimmed'+str(key) in dictionary[img]:
+            flatlist.append(dictionary[img]['trimmed'+str(key)][0].data)
+    if len(flatlist):
+       stack, masterflat = flatcombine2(flatlist, verbose = verbose, response = True, Saxis=0)
+    else:
+        masterflat = None
+    return masterflat
 
 ###############################################################
 
@@ -953,7 +947,7 @@ def _mag2flux(wave, mag, zeropt=48.60):
 
 ###########################################################################
 
-def DefFluxCal(obj_wave, obj_flux, stdstar='', mode='spline', polydeg=4,
+def DefFluxCal(obj_wave, obj_flux, stdstar='', mode='spline', polydeg=4, exptime =1, airmass=1,
                display=False, interactive=False):
     """
 
@@ -1002,6 +996,8 @@ def DefFluxCal(obj_wave, obj_flux, stdstar='', mode='spline', polydeg=4,
         # standard star spectrum is stored in magnitude units
         std_flux = _mag2flux(std_wave, std_mag)
 
+        std_flux = atmoexp_correction(std_wave, std_flux, exptime, airmass, site='mauna', verbose = True)
+        
         # Automatically exclude these obnoxious lines...
         balmer = np.array([6563, 4861, 4341], dtype='float')
 
@@ -1138,7 +1134,7 @@ def fitsens(obj_wave, obj_wave_ds, LogSensfunc, mode, polydeg0, obj_flux,std_wav
         input('left-click mark bad, right-click unmark, <d> remove. Return to exit ...')
     else:
         raw_input('left-click mark bad, right-click unmark, <d> remove. Return to exit ...')
-    return sensfunc2
+    return _sensfunc2
 
 ####################################
 def onkeypress(event):
@@ -1571,3 +1567,91 @@ def findslit(img,key, verbose=False,cut=None):
     return list(zip(ss,ee))
 
 #################################################
+
+def atmoexp_correction(wavestd,fluxstd,exptime,airmass,site='mauna', verbose = False):
+    exptime = 1
+    import deimos
+    if site =='mauna':
+        extinction = _path[0] + '/resources/extinction/mauna.dat'
+        data = np.genfromtxt(extinction)
+        aae, yye = zip(*data)
+        aae, yye = np.array(aae, float), np.array(yye, float)
+        atm_std = np.interp(wavestd, aae, yye)
+        aircorr = 10 ** (0.4 * np.array(atm_std) * airmass)
+        fluxstd_corr = (fluxstd / exptime) * aircorr
+        if verbose:
+            plt.clf()
+            plt.plot(wavestd,fluxstd,'-r')
+            plt.plot(wavestd,fluxstd_corr,'-b')
+            if pyversion>=3:
+                input('stop here')
+            else:
+                raw_input('stop here')
+        return fluxstd_corr
+
+##########################################
+
+def flatcombine2(flatlist, verbose = False, response = True, Saxis=0):
+    """
+    input: list of flats
+    output: 
+        - combined flat (median)
+        - normalized flat
+    """
+    files = flatlist
+    for i in range(0,len(files)):
+        #hdu_i = fits.open(files[i])
+#        im_i = hdu_i[0].data
+        if (i==0):
+            all_data = files[i] 
+        elif (i>0):
+            all_data = np.dstack( (all_data, files[i]))
+
+    # do median across whole stack of flat images
+    flat_stack = np.nanmedian(all_data, axis=2)
+
+    if verbose:
+        plt.figure(2)
+        plt.clf()
+        print('combined flat')
+        plt.imshow(flat_stack)
+
+    if response:
+        xdata = np.arange(all_data.shape[1]) # x pixels
+        flat_1d = convolve(flat_stack.mean(axis=Saxis), Box1DKernel(40))
+        otherdirection = convolve(flat_stack.mean(axis=1), Box1DKernel(5))
+        otherdirection = otherdirection/np.max(otherdirection)
+        flat_2d = flat_stack.mean(axis=Saxis)
+        flat = flat_stack
+        
+        if Saxis==0:
+            for i in range(flat_stack.shape[Saxis]):
+                flat[i,:] = flat_stack[i,:] / (flat_1d  * otherdirection[i])
+        else:
+            for i in range(flat_stack.shape[Saxis]):
+                flat[:,i] = flat_stack[:,i] / (flat_1d  * otherdirection[i])
+                
+        ### remve outlier in the flat
+        flat[flat>1.1]=1.1
+        flat[flat<0.9]=0.9
+
+        if verbose:
+            plt.figure(1)
+            plt.clf()
+            plt.plot(xdata,flat_2d,'r-')
+            plt.plot(xdata,flat_1d,'b-')
+
+            plt.figure(3)
+            plt.clf()
+            plt.plot(xdata,flat_2d/flat_1d,'r-')
+
+#            ds9 = pyds9.DS9('deimos')
+#            ds9.set('frame 1')
+#            ds9.set('scale zscale');
+#            ds9.set_np2arr(flat)
+    else:
+        flat = None
+        
+    return flat_stack, flat
+
+######################################
