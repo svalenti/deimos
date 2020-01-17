@@ -116,7 +116,7 @@ if __name__ == "__main__":
                     for key in [3,7]:
                         dictionary[img]['masterflat'+str(key)]= masterflat[key]
                         dictionary[img]['trimflat'+str(key)]= dictionary[img]['trimmed'+str(key)][0].data / masterflat[key]
-                input('stop here')
+
                 ########################################################
                 #   
                 ##

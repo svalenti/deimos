@@ -37,7 +37,6 @@ def fitline(xx,yy,center,amplitude=1,sigma=3,verbose=True):
         plt.plot(xx,yy,'-b',linewidth=3)
         plt.plot(xx,model,'-r',linewidth=3)
         print(params3)
-        input('stop')
     return params3
 
 def detect_peaks(x, mph=None, mpd=1, threshold=0, edge='rising',
