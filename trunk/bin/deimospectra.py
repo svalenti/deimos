@@ -469,27 +469,29 @@ if __name__ == "__main__":
                         dowave = True
                         print('\n#### wavelength solution: ',img)                    
                         print(img,dictionary[img]['OBJECT'],key)
+
+                        # load the sky reference
+                        skyref = np.genfromtxt(os.path.join(deimos.__path__[0]+'/resources//sky/','UVES_nightsky_lowres.dat'), names='wav, flux')
+                        # normalize sky spectrum
+                        skyref['flux'] = skyref['flux']-np.min(skyref['flux'])
+                        skyref['flux'] = skyref['flux']/np.max(skyref['flux'])
+                        # interpolate the sky template
+                        skyref_interp = interp1d(skyref['wav'], skyref['flux'], bounds_error=False)
+                        
+                        # use my sky for wavelength check 
+                        sky = np.array(dictionary[img]['mysky' + str(key)])
+                        # reject negative values
+                        sky[sky<0]=0
+                        # normalize my sky spectrum
+                        sky = sky - np.min(sky)
+                        sky = sky / np.max(sky)
+
+                        
                         if 'wave'+str(key) in dictionary[img] and _force==False:
 
                             wave = dictionary[img]['wave' + str(key)]
                             flux = dictionary[img]['spec_opt' + str(key)]                            
                             
-                            # load the sky reference
-                            skyref = np.genfromtxt(os.path.join(deimos.__path__[0]+'/resources//sky/','UVES_nightsky_lowres.dat'), names='wav, flux')
-                            # normalize sky spectrum
-                            skyref['flux'] = skyref['flux']-np.min(skyref['flux'])
-                            skyref['flux'] = skyref['flux']/np.max(skyref['flux'])
-                            # interpolate the sky template
-                            skyref_interp = interp1d(skyref['wav'], skyref['flux'], bounds_error=False)
-
-                            # use my sky for wavelength check 
-                            sky = np.array(dictionary[img]['mysky' + str(key)])
-                            # reject negative values
-                            sky[sky<0]=0
-                            # normalize my sky spectrum
-                            sky = sky - np.min(sky)
-                            sky = sky / np.max(sky)
-
                             plt.figure(1)
                             plt.clf()
                             plt.plot(wave,sky,'-r')
@@ -579,7 +581,8 @@ if __name__ == "__main__":
                                 #
                                 ref_filename = os.path.join(deimos.__path__[0]+'/resources/sky/','std_telluric.fits')
                                                            
-                                shift, scalefactor = deimos.deimoswave.checkwithtelluric(wave, flux , key, guess, ref_filename)
+                                shift, scalefactor = deimos.deimoswave.checkwithtelluric(wave, flux , key, ref_filename, guess=(90.0,1.0))
+                                print ('myshift: '+str(shift))
                                 
 #                                imgout = 'std_'+ _dir + '_' + str(key) + '.ascii'
 #                                np.savetxt(imgout, np.c_[wave, flux ], header='wave  flux ')
