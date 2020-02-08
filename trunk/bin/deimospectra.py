@@ -497,8 +497,11 @@ if __name__ == "__main__":
                         # interpolate the sky template
                         skyref_interp = interp1d(skyref['wav'], skyref['flux'], bounds_error=False)
                         
-                        # use my sky for wavelength check 
+                        # use my sky for wavelength check for scince frames
                         sky = np.array(dictionary[img]['mysky' + str(key)])
+                        # use the flux for wavelength check for standards  frames
+                        flux = dictionary[img]['spec_opt' + str(key)]
+
                         # reject negative values
                         sky[sky<0]=0
                         # normalize my sky spectrum
@@ -507,7 +510,6 @@ if __name__ == "__main__":
 
                         
                         if 'wave'+str(key) in dictionary[img] and _force==False:
-
                             wave = dictionary[img]['wave' + str(key)]
                             flux = dictionary[img]['spec_opt' + str(key)]                            
                             
@@ -523,6 +525,7 @@ if __name__ == "__main__":
                             if not answ: answ = 'n'
                             if answ in ['n','N','NO','no']:
                                 dowave = False
+                                
                         if dowave:
                             print('\n#### wavelength solution ',img)
                             print(arc)
@@ -574,8 +577,7 @@ if __name__ == "__main__":
                             #np.savetxt(imgout, np.c_[wave, sky ], header='wave  flux ')
                             
                             from deimos import deimoswave
-                            if 'std' not in dictionary[img].keys():
-
+                            if 'std' not in dictionary[img].keys():                                
                                 # check if it is monotonically increasing
                                 dxa = np.diff(wave)
                                 if (dxa > 0).all() is False:
@@ -593,47 +595,48 @@ if __name__ == "__main__":
                                 else:
                                     shift = (-1) * bestparams[0]
 
+                                print('shift the spectrum of ',shift)        
+                                #  wavelength calibration in the database
+                                wave = p(xs) + shift
+                                    
+                                if verbose:
+                                    plt.figure(2)
+                                    fig2 = plt.figure(2)
+                                    fig2.clf()
+                                    # compare the reference spectrum and the extracted sky spectrum
+                                    ax2 = fig2.add_subplot(2, 1, 1)
+                                    ax22 = fig2.add_subplot(2, 1, 2)
+                                    ax2.plot(skyref['wav'], skyref['flux']/np.max(skyref['flux']))
+                                    ax2.axes.set_ylabel('Flux Density ($10^{16} f_{\lambda}$)')
+                                    ax2.axes.set_xlabel('Wavelength ($\AA$)')
+                                    ax2.plot(wave, sky0)
+                                    
+                                    # plot the extracted sky spectrum 
+                                    ax22.plot(wave, flux)
+                                    ax22.axes.set_ylabel('Counts')
+                                    ax22.axes.set_xlabel('wavelenght');
+                                    if pyversion>=3:
+                                        input('stop here')
+                                    else:
+                                        raw_input('stop here')
+
 #                                input('stop here ddd')
 #                                shift = deimos.deimosutil.checkwavelength_arc(wave, sky1, skyref['wav'], skyref['flux'], xmin, xmax, inter=True)
                             else:
                                 # HERE YIZE WILL ADD THE CHECK 
                                 #
-                                ref_filename = os.path.join(deimos.__path__[0]+'/resources/sky/','std_telluric.fits')
-                                                           
-                                shift, scalefactor = deimos.deimoswave.checkwithtelluric(wave, flux , key, ref_filename, guess=(90.0,1.0))
+                                ref_filename = os.path.join(deimos.__path__[0]+'/resources/sky/','std_telluric.fits')                                                          
+                                shift, scalefactor = deimos.deimoswave.checkwithtelluric(wave, flux , key, ref_filename, guess=(5.,1.0), verbose=True)
                                 print ('myshift: '+str(shift))
                                 
-#                                imgout = 'std_'+ _dir + '_' + str(key) + '.ascii'
-#                                np.savetxt(imgout, np.c_[wave, flux ], header='wave  flux ')
-                                
-                            print('shift the spectrum of ',shift)
-        
-                            #  wavelength calibration in the database
-                            wave = p(xs) + shift
+                                print('shift the spectrum of ',shift)        
+                                #  wavelength calibration in the database
+                                wave = p(xs) + shift
+                                #             imgout = 'std_'+ _dir + '_' + str(key) + '.ascii'
+                                #             np.savetxt(imgout, np.c_[wave, flux ], header='wave  flux ')
+                               
                             dictionary[img]['wave' + str(key)]= wave
                             spec_opt = dictionary[img]['spec_opt' + str(key)]
-                            
-                            if verbose:
-                                # compare the reference spectrum and the extracted sky spectrum
-                                plt.figure(2)
-                                fig2 = plt.figure(2)
-                                fig2.clf()
-                                ax2 = fig2.add_subplot(2, 1, 1)
-                                ax22 = fig2.add_subplot(2, 1, 2)
-                                ax2.plot(skyref['wav'], skyref['flux']/np.max(skyref['flux']))
-                                ax2.axes.set_ylabel('Flux Density ($10^{16} f_{\lambda}$)')
-                                ax2.axes.set_xlabel('Wavelength ($\AA$)')
-                                ax2.plot(wave, sky)
-                                
-                                # plot the extracted sky spectrum 
-                                ax22.plot(wave, spec_opt)
-                                ax22.axes.set_ylabel('Counts')
-                                ax22.axes.set_xlabel('wavelenght');                            
-                                if pyversion>=3:
-                                    input('stop here')
-                                else:
-                                    raw_input('stop here')
-        
                             spec_basic = dictionary[img]['spec_basic' + str(key)]
                             skybg_opt = dictionary[img]['skybg_opt' + str(key)]
                             spec_var = dictionary[img]['spec_var' + str(key)]

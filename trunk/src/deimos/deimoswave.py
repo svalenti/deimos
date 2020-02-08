@@ -247,7 +247,7 @@ def model_lamp_std(params, wave, counts):
     model['flux'] = c0  * counts
     return model
 
-def checkwithtelluric(wave, flux, key, ref_fliename, guess = (90.0, 1.001)):
+def checkwithtelluric(wave, flux, key, ref_filename, guess = (1.0, 1.001), verbose=False):
     from astropy.io import ascii
     from astropy.table import QTable
     if key == 7:
@@ -258,9 +258,10 @@ def checkwithtelluric(wave, flux, key, ref_fliename, guess = (90.0, 1.001)):
     std.sort('wave')
     stdwave = std['wave']
     stdflux = std['flux']
+    
     stdflux = stdflux-stdflux.min()
     stdflux = stdflux/stdflux.max()
-
+    
     # this will be the array with atmospheric lines removed
     stdwave_cut = stdwave
     stdflux_cut = stdflux
@@ -276,13 +277,13 @@ def checkwithtelluric(wave, flux, key, ref_fliename, guess = (90.0, 1.001)):
         stdflux_cut = stdflux_cut[ww]
         
     # read the reference sky
-    hdu = fits.open(ref_fliename)
+    hdu = fits.open(ref_filename)
     y = hdu[0].data
     x = np.arange(len(y))
     A = hdu[0].header['CRVAL1']
     B = hdu[0].header['CDELT1']
     # use headers to get the wavelength calibration
-    sky_wave = A +B *x + 100
+    sky_wave = A +B *x #+ 100
     sky_flux =  y
     if which_side == 'red':
         ss = (sky_wave > 6500) & (sky_wave < 9200)
@@ -295,6 +296,7 @@ def checkwithtelluric(wave, flux, key, ref_fliename, guess = (90.0, 1.001)):
     # after removing the telluric I need to inteprolate along the cut to get the same file dimention 
     flux_interp = interp1d(stdwave_cut, stdflux_cut, bounds_error=False )
     new_stdflux = flux_interp(stdwave)
+
     # the atmospheric file is usually 1 everywhwere 
     atmo = stdflux/new_stdflux
     atmo[atmo<0]=0
@@ -308,15 +310,39 @@ def checkwithtelluric(wave, flux, key, ref_fliename, guess = (90.0, 1.001)):
     #guess = (50.001, 1.001)
     model = model_lamp_std(guess, atmwave, atmflux)
     
-    
     # the get_lamp_difference file takes the inteprolate model file as input 
     atmomodel_interp = interp1d(sky_wave, sky_flux, bounds_error=False)
     
     # run the minization giving the interpolated atmospheric file, the initial parameter and the 
     bestparams = fmin(get_lamp_difference_std, guess, args=(atmwave, atmflux, atmomodel_interp), maxiter=10000, disp = False)
     # this should be the best parameters for shift and sclae (c)
-    #print(bestparams)
-    
+    print(bestparams)
+    shift, scalefactor = bestparams[0],bestparams[1]
+    print ('myshift: '+str(shift))
+    wave = wave + shift
+    atmwave = atmwave + shift
+
+    if verbose:
+        plt.figure(2)
+        fig2 = plt.figure(2)
+        fig2.clf()
+        # compare the reference spectrum and the extracted sky spectrum
+        ax2 = fig2.add_subplot(2, 1, 1)
+        ax22 = fig2.add_subplot(2, 1, 2)
+        ax2.plot(atmwave, atmflux,'-r')
+        ax2.axes.set_ylabel('Flux Density ($10^{16} f_{\lambda}$)')
+        ax2.axes.set_xlabel('Wavelength ($\AA$)')
+        ax2.plot(sky_wave, sky_flux)
+                                    
+        # plot the extracted sky spectrum 
+        ax22.plot(wave, flux)
+        ax22.axes.set_ylabel('Counts')
+        ax22.axes.set_xlabel('wavelenght');            
+        if pyversion>=3:
+            input('stop std')
+        else:
+            raw_input('stop std')
+            
     #model = model_lamp_std(bestparams, atmwave, atmflux)
     #plt.clf()
     #plt.plot(sky_wave,sky_flux,'k',linewidth=5)
