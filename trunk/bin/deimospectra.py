@@ -120,32 +120,35 @@ if __name__ == "__main__":
                 ########################################################
                 #   
                 ##
+                print('\n####  Find curvature solution of different setup ')
                 lambdas={}
                 lamb={}
                 for key in [3,7]:#lambdas:
                         if os.path.isfile('lambdas_' + str(pyversion) + '_' + str(key) + '.dat'):
-                            print('registered found')
+                            print('\n### I Found the curvature solution, skip this step')
                             lambdas[key] = pickle.load(open(os.path.join('./','lambdas_' + str(pyversion) + '_'  + str(key) + '.dat'), 'rb'))
                         else:
                             lambdas[key] = None
             
                         if lambdas[key] is None:
+                            print('\n### Select which arc do you want to use ')
                             for img in setup_arc[setup]:
                                 if 'trimflat' + str(key)  in dictionary[img]:
                                     image = dictionary[img]['trimflat' + str(key)]
                                 elif 'trimmed' + str(key)  in dictionary[img]:
                                     image = dictionary[img]['trimmed' + str(key)][0].data
-                                    deimosutil.image_plot(image)
-            
+                                    deimosutil.image_plot(image,3,dictionary[img]['OBJECT'])
                                     if pyversion>=3:
-                                        input('stop')
+                                        input(' see figure 3, ' + img+' ')
                                     else:
-                                        raw_input('stop')
+                                        raw_input(' see figure 3, '  + img+' ')
                                         
                             if pyversion>=3:                            
-                                img0 = input('which image to do the sky correction ? ')
+                                img0 = input('which image do you want to use to do find the frame curvature [' + str(setup_arc[setup][0]) + ']? ')
                             else:
-                                img0 = raw_input('which image to do the sky correction ? ')
+                                img0 = raw_input('which image do you want to use to do find the frame curvature [' + str(setup_arc[setup][0]) + ']? ')
+                            if not img0:
+                                img0 = setup_arc[setup][0]
                                 
                             lambdas[key] = deimosutil.retify_frame(img0, dictionary, key,True)
                             
@@ -194,10 +197,15 @@ if __name__ == "__main__":
                         print(img,dictionary[img]['OBJECT'],key)
                         dosky = True
                         if 'nosky'+str(key) in dictionary[img] and _force==False:
+                            image = dictionary[img]['trimmed' + str(key)][0].data
+                            nosky = dictionary[img]['nosky' + str(key)]
+
+                            deimos.deimosutil.image_plot([image,nosky],frame=3,_title='image - nosky')
+
                             if pyversion>=3:
-                                answ = input('do you want to to sky subtraction again ? [y/n] [n]')
+                                answ = input('do you want to do the sky subtraction again ? [y/n] [n]')
                             else:
-                                answ = raw_input('do you want to to sky subtraction again ? [y/n] [n]')
+                                answ = raw_input('do you want to do the sky subtraction again ? [y/n] [n]')
                             if not answ: answ = 'n'
                             if answ in ['n','N','NO','no']:
                                 dosky = False
@@ -223,6 +231,11 @@ if __name__ == "__main__":
                                 sky = skyfit.ev(lambdafit, yvals)
         
                                 if verbose:
+                                    deimos.deimosutil.image_plot([image,image-sky],frame=3,_title='image - nosky')
+                                    if pyversion>=3:
+                                        input('sky subtraction: original sky and residual')
+                                    else:
+                                        raw_input('sky subtraction: original sky and residual')
                                     #plot the image, sky model, and differece (and/or display in DS9)
                                     #ds9.set('frame 1')
                                     #ds9.set_np2arr(image)
@@ -230,10 +243,7 @@ if __name__ == "__main__":
                                     #ds9.set_np2arr(sky)
                                     #ds9.set('frame 3')
                                     #ds9.set_np2arr(image - sky)
-                                    if pyversion>=3:
-                                        input('stop sky subtraction: original sky and residual in ds9')
-                                    else:
-                                        raw_input('stop sky subtraction: original sky and residual in ds9')
+
                                         
                                 dictionary[img]['sky' + str(key)] = sky
                                 # subtract the sky
@@ -281,13 +291,22 @@ if __name__ == "__main__":
                             print(img,dictionary[img]['OBJECT'],key)
                             dotrace = True
                             if 'peakpos_'+str(key) in dictionary[img] and _force==False:
+                                imm = dictionary[img]['trimmed' + str(key)][0].data
+                                plt.figure(3)
+                                plt.clf()
+                                deimos.deimosutil.image_plot(imm,frame=3,_title=dictionary[img]['OBJECT'])
+                                peakpos1 = dictionary[img]['peakpos_'+str(key)]
+
+                                xs = np.arange(len(peakpos1))
+                                plt.plot(xs,peakpos1,'-c')
                                 if pyversion>=3:
-                                    answ = input('do you want to trace again ? [y/n] [n]')
+                                    answ = input('do you want to trace again (see figure 3) ? [y/n] [n]')
                                 else:
-                                    answ = raw_input('do you want to trace again ? [y/n] [n]')
+                                    answ = raw_input('do you want to trace again (see figure 3) ? [y/n] [n]')
                                 if not answ: answ = 'n'
                                 if answ in ['n','N','NO','no']:
                                     dotrace = False
+                                plt.clf()
                             
                             if dotrace:
                                 peakpos1,centerv,highv,fwhmv,dictionary = deimos.deimosutil.tracenew(img, dictionary, key, step, True, polyorder, sigma, niteration)
@@ -327,14 +346,14 @@ if __name__ == "__main__":
                             peak = dictionary[img]['peakpos_' + str(key)]
                             plt.figure(3)
                             plt.clf()
-                            deimos.deimosutil.image_plot(nosky,3)
+                            deimos.deimosutil.image_plot(nosky,3,dictionary[img]['OBJECT'])
                             plt.plot(xs,peak,'.r')
                             othertrace = None
                             _shift=0
                             if pyversion>=3:
-                                answ = input('trace ok [[y]/n]? ')
+                                answ = input('trace ok [[y]/n] (see figure 3)? ')
                             else:
-                                answ = raw_input('trace ok [[y]/n]? ')
+                                answ = raw_input('trace ok [[y]/n]  (see figure 3)? ')
                                 
                             if not answ:
                                 answ='y'

@@ -265,10 +265,13 @@ def trim_rotate_split(setup_object,setup_flat,setup_arc,dictionary, setup, force
             print(img,dictionary[img]['OBJECT'],key)
             dotrim = True
             if 'trimmed'+str(key) in dictionary[img] and force==False:
+                image = dictionary[img]['trimmed' + str(key)][0].data
+                image_plot(image,frame=3,_title=dictionary[img]['OBJECT'])
+                
                 if pyversion>=3:
-                    answ = input('do you want to trim again ? [y/n] [n]')
+                    answ = input('do you want to trim again (see figure 3) ? [y/n] [n] ')
                 else:
-                    answ = raw_input('do you want to trim again ? [y/n] [n]')
+                    answ = raw_input('do you want to trim again (see figure 3) ? [y/n] [n]')
                 if not answ: answ = 'n'
                 if answ in ['n','N','NO','no']:
                     dotrim = False
@@ -344,18 +347,58 @@ def makeflat(setup_flat,dictionary,setup,key,verbose=False):
 
 ###############################################################
 
-def image_plot(image,frame=3):
-    # determine the image pixel distribution (used for displaying below)
-    sample = sigma_clip(image)
-    vmin = sample.mean() - 1 * sample.std()
-    vmax = sample.mean() + 3 * sample.std()
-    yvals, xvals = np.indices(image.shape)
-    extent = (xvals.min(), xvals.max(), yvals.min(), yvals.max())
-    plt.figure(frame)
-    plt.imshow(image, origin='lower', cmap='gray', aspect='auto', vmin=vmin, vmax=vmax, extent=extent)
-    plt.xlabel('Column Number')
-    plt.ylabel('Row Number');
+def image_plot(image0,frame=3,_title='',xlabel='Column Number',ylabel='Row Number'):
+    fig = plt.figure(frame)
+    fig.clf()
+    
+    if len(image0)==2:
+        ax = fig.add_subplot(2, 1, 1)
+        ax2 = fig.add_subplot(2, 1, 2)
+        ax.title.set_text(_title)
+        
+        # plot 1        
+        image=image0[0]
+        # determine the image pixel distribution (used for displaying below)
+        sample = sigma_clip(image)
+        vmin = sample.mean() - 1 * sample.std()
+        vmax = sample.mean() + 3 * sample.std()
+        yvals, xvals = np.indices(image.shape)
+        extent = (xvals.min(), xvals.max(), yvals.min(), yvals.max())
+        ax.imshow(image, origin='lower', cmap='gray', aspect='auto', vmin=vmin, vmax=vmax, extent=extent)
+        ax.axes.set_xlabel(xlabel)
+        ax.axes.set_ylabel(ylabel)
+        
+        # plot 2
+        image1=image0[1]
+        # determine the image pixel distribution (used for displaying below)
+        sample = sigma_clip(image1)
+        vmin2 = sample.mean() - 1 * sample.std()
+        vmax2 = sample.mean() + 3 * sample.std()
+        yvals, xvals = np.indices(image1.shape)
+        extent2 = (xvals.min(), xvals.max(), yvals.min(), yvals.max())
+        ax2.imshow(image1, origin='lower', cmap='gray', aspect='auto', vmin=vmin2, vmax=vmax2, extent=extent2)
+#        ax2.axes.set_xlabel(xlabel)
+#        ax2.axes.set_ylabel(ylabel)
+        
+    else:
+        ax = fig.add_subplot(1, 1, 1)
+        ax.title.set_text(_title)
+        image = image0        
+        # determine the image pixel distribution (used for displaying below)
+        sample = sigma_clip(image)
+        vmin = sample.mean() - 1 * sample.std()
+        vmax = sample.mean() + 3 * sample.std()
+        yvals, xvals = np.indices(image.shape)
+        extent = (xvals.min(), xvals.max(), yvals.min(), yvals.max())
+        ax.imshow(image, origin='lower', cmap='gray', aspect='auto', vmin=vmin, vmax=vmax, extent=extent)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
 
+
+
+
+
+    
 #######################################################
 
 def find_sky_object(image,objectcut=0.2,key=3,interactive=False):
@@ -439,15 +482,15 @@ def retify_frame(img0, dictionary, ext=3, verbose=False):
     # this is an arc, we do not need to mask
     skymask = np.ones(image.shape, dtype=bool)
     
-    # show the mask
-    if verbose:
-        plt.figure(3)
-        plt.clf()
-        plt.imshow(skymask, origin='lower', aspect='auto');
-        if pyversion>=3:
-            input('stop')
-        else:
-            raw_input('stop')
+#    # show the mask
+#    if verbose:
+#        plt.figure(3)
+#        plt.clf()
+#        plt.imshow(skymask, origin='lower', aspect='auto');
+#        if pyversion>=3:
+#            input('stop')
+#        else:
+#            raw_input('stop')
             
     # cut out a small image "stamp" near the center of the frame
     ny, nx = image.shape
@@ -571,9 +614,9 @@ def retify_frame(img0, dictionary, ext=3, verbose=False):
         plt.ylabel('Wavelength Offset from Middle Row');
 
     if pyversion>=3:        
-        input('stop')
+        input('\n### Solution of wavelength offset shown in Figure 3 ')
     else:
-        raw_input('stop')
+        raw_input('\n### Solution of wavelength offset shown in Figure 3 ')
     return lambdas
 
 ################################################3
@@ -1329,24 +1372,46 @@ def profilespec(data,dispersion):
         xx = data.mean(axis=1)
     else:
         xx = data[:,dispersion-50:dispersion+50].mean(axis=1)
-    xx=  (xx - np.min(xx))/np.max(xx)
+    xx=  (xx - np.min(xx))/np.max(xx) + 1e-3
     yy = np.arange(len(xx))
 
     _xx = xx
     _yy = yy
-    center = np.argmax(_xx)
-    lower = center - 10
-    upper = center + 10
-    l1 = center - 40
-    l2 = center - 25
-    u1 = center + 25
-    u2 = center + 40
+#    center = np.argmax(_xx)
 
+    high = 1.
+    fwhm = 5.
+    _cent = len(_yy)/2.
+    # starting guess for the profile model
+    guess = (high, _cent, fwhm)
+    guessbound = [(0.1,1.9),(_cent-30, _cent+30),(fwhm/3.,fwhm*2)]
+    params1 = minimize(get_profile_chisq, guess, args=(_yy, _xx), bounds=guessbound)
+
+    print(params1['x'])
+    centfit = params1['x'][1]
+    fwhmfit = params1['x'][2]
+    if centfit!= _cent:
+        center = centfit
+        fwhm = np.min([fwhmfit , 15])
+        
+    else:
+        center = _yy[np.argmax(_xx)]
+        fwhm = 7
+
+        
+    lower = center - fwhm * 2.5
+    upper = center + fwhm * 2.5
+    l1 = np.max([center - fwhm * 5, 5])
+    l2 = np.max([center - fwhm *4,10])
+    u1 = np.min([center + fwhm * 4, len(_xx)-10])
+    u2 = np.min([center + fwhm * 5, len(_xx)-5])
+
+    
     line5 = plt.plot(_yy,_xx,'-b')
     line1 = plt.plot([l1,l2],[0,0],'-k')
     line2 = plt.plot([u1,u2],[0,0],'-k')
     line3 = plt.plot([lower,upper],[1,1],'-k')
-    plt.plot([_yy[center]],[1],'or')
+    plt.plot(center,1,'or')
     kid = fig.canvas.mpl_connect('key_press_event',onkeypress1)
     plt.draw()
     if pyversion>=3:
@@ -1408,7 +1473,7 @@ def tracenew(img, dictionary, key, step, verbose, polyorder, sigma, niteration):
     dispersion= None
     if verbose:
         plt.clf()
-        image_plot(data,1)
+        image_plot(data,1,dictionary[img]['OBJECT'])
         if pyversion>=3:
             dispersion = input('where do you want to look for the object profile [[a]ll / 300] ? [a] ')
         else:
@@ -1462,9 +1527,15 @@ def tracenew(img, dictionary, key, step, verbose, polyorder, sigma, niteration):
         plt.plot(loop,centerv,'or')
         plt.plot(xs,peakpos,'-g')
         plt.plot(xs,peakpos1,'-c')
+        plt.title(dictionary[img]['OBJECT'])
         for line in rejected:
             plt.plot(line[0],line[1],'om')
-
+        if pyversion>=3:
+            input('stop here')
+        else:
+            raw_input('stop here')
+        plt.clf()
+        
     meta={}
     meta['aplow']=lower-center
     meta['bckgrfunc']='chebyshev'
@@ -1562,8 +1633,8 @@ def findslit(img,key, verbose=False,cut=None):
         plt.plot(xx,prof,'-r')
         plt.plot(point,yy,'ob')
 
-    ss = np.array(point[:-1])[np.diff(point)>100]+10
-    ee = np.array(point[1:])[np.diff(point)>100]-10
+    ss = np.array(point[:-1])[np.diff(point)>100] + 20
+    ee = np.array(point[1:])[np.diff(point)>100] - 20
     return list(zip(ss,ee))
 
 #################################################
@@ -1614,9 +1685,11 @@ def flatcombine2(flatlist, verbose = False, response = True, Saxis=0):
         plt.figure(2)
         plt.clf()
         print('combined flat')
-        plt.imshow(flat_stack)
+        image_plot(flat_stack,frame=2,_title='merged flat')
+#        plt.imshow(flat_stack)
 
     if response:
+        print('normalize flat')
         xdata = np.arange(all_data.shape[1]) # x pixels
         flat_1d = convolve(flat_stack.mean(axis=Saxis), Box1DKernel(40))
         otherdirection = convolve(flat_stack.mean(axis=1), Box1DKernel(5))
@@ -1636,15 +1709,16 @@ def flatcombine2(flatlist, verbose = False, response = True, Saxis=0):
         flat[flat<0.9]=0.9
 
         if verbose:
-            plt.figure(1)
-            plt.clf()
-            plt.plot(xdata,flat_2d,'r-')
-            plt.plot(xdata,flat_1d,'b-')
-
-            plt.figure(3)
-            plt.clf()
-            plt.plot(xdata,flat_2d/flat_1d,'r-')
-
+#            print('here')
+#            plt.figure(1)
+#            plt.clf()
+#            plt.plot(xdata,flat_2d,'r-')
+#            plt.plot(xdata,flat_1d,'b-')
+            image_plot(flat_stack,frame=1,_title='normalized flat')
+            
+#            plt.figure(3)
+#            plt.clf()
+#            plt.plot(xdata,flat_2d/flat_1d,'r-')
 #            ds9 = pyds9.DS9('deimos')
 #            ds9.set('frame 1')
 #            ds9.set('scale zscale');
