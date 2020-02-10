@@ -625,8 +625,11 @@ if __name__ == "__main__":
                             else:
                                 # HERE YIZE WILL ADD THE CHECK 
                                 #
-                                ref_filename = os.path.join(deimos.__path__[0]+'/resources/sky/','std_telluric.fits')                                                          
-                                shift, scalefactor = deimos.deimoswave.checkwithtelluric(wave, flux , key, ref_filename, guess=(5.,1.0), verbose=True)
+                                ref_filename = os.path.join(deimos.__path__[0]+'/resources/sky/','std_telluric.fits')
+                                imgout = 'std_'+ _dir + '_' + str(key) + '.ascii'
+                                np.savetxt(imgout, np.c_[wave, flux ], header='wave  flux ')
+                                
+                                shift, scalefactor = deimos.deimoswave.checkwithtelluric(wave, flux , key, ref_filename, guess=(0.001,1.0001), verbose=True)
                                 print ('myshift: '+str(shift))
                                 
                                 print('shift the spectrum of ',shift)        
@@ -657,6 +660,7 @@ if __name__ == "__main__":
                     if 'std' in dictionary[img].keys():
                         std.append(img)
                 ##############################
+                print(std)
                 for img in std:
                     for key in [3,7]:
                         doresponse = True
@@ -672,6 +676,8 @@ if __name__ == "__main__":
                         if doresponse:
                             std0 = dictionary[img]['std']
                             liststd = glob.glob(_path[0]+'/resources/onedstds/*/'+std0)
+                            if not len(liststd):
+                                print('Error: standard name not found')
                             if len(liststd):
                                 dostandard = True
                                 if len(liststd)>1:

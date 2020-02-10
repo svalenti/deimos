@@ -289,9 +289,10 @@ def checkwithtelluric(wave, flux, key, ref_filename, guess = (1.0, 1.001), verbo
         ss = (sky_wave > 6500) & (sky_wave < 9200)
     if which_side == 'blue':
         ss = (sky_wave > 4500) & (sky_wave < 7200)
-    sky_flux = sky_flux[ss]
+    sky_flux = 1 - sky_flux[ss]
     sky_wave = sky_wave[ss]
-    
+    sky_flux[sky_flux<=0] = 1e-5
+
     # inteprolate the array
     # after removing the telluric I need to inteprolate along the cut to get the same file dimention 
     flux_interp = interp1d(stdwave_cut, stdflux_cut, bounds_error=False )
@@ -305,9 +306,9 @@ def checkwithtelluric(wave, flux, key, ref_filename, guess = (1.0, 1.001), verbo
     if which_side == 'blue':
         gg = (stdwave > 5000)
     atmwave=stdwave[gg]
-    atmflux = atmo[gg]
-    
-    #guess = (50.001, 1.001)
+    atmflux = 1 - atmo[gg]
+    atmflux[atmflux<=0] = 1e-5
+
     model = model_lamp_std(guess, atmwave, atmflux)
     
     # the get_lamp_difference file takes the inteprolate model file as input 
@@ -319,8 +320,6 @@ def checkwithtelluric(wave, flux, key, ref_filename, guess = (1.0, 1.001), verbo
     print(bestparams)
     shift, scalefactor = bestparams[0],bestparams[1]
     print ('myshift: '+str(shift))
-    wave = wave + shift
-    atmwave = atmwave + shift
 
     if verbose:
         plt.figure(2)
@@ -332,8 +331,10 @@ def checkwithtelluric(wave, flux, key, ref_filename, guess = (1.0, 1.001), verbo
         ax2.plot(atmwave, atmflux,'-r')
         ax2.axes.set_ylabel('Flux Density ($10^{16} f_{\lambda}$)')
         ax2.axes.set_xlabel('Wavelength ($\AA$)')
-        ax2.plot(sky_wave, sky_flux)
-                                    
+        ax2.plot(atmwave, atmflux,'-b')
+        ax2.plot(sky_wave, sky_flux,'-r')
+        ax2.plot(atmwave+bestparams[0], atmflux,'-g')
+        
         # plot the extracted sky spectrum 
         ax22.plot(wave, flux)
         ax22.axes.set_ylabel('Counts')
@@ -343,14 +344,113 @@ def checkwithtelluric(wave, flux, key, ref_filename, guess = (1.0, 1.001), verbo
         else:
             raw_input('stop std')
             
-    #model = model_lamp_std(bestparams, atmwave, atmflux)
-    #plt.clf()
-    #plt.plot(sky_wave,sky_flux,'k',linewidth=5)
-    #plt.plot(atmwave,atmflux,'r',alpha=0.7)
-    #plt.plot(model['wav'],model['flux'],'-m',alpha=0.7)
-    #input('myshift')
     return bestparams[0],bestparams[1]
 ###########################################################
+
+#def checkwithtelluric(wave, flux, key, ref_filename, guess = (1.0, 1.001), verbose=False):
+#    from astropy.io import ascii
+#    from astropy.table import QTable
+#    if key == 7:
+#        which_side = 'red'
+#    if key == 3:
+#        which_side = 'blue'
+#    std = QTable([wave,flux], names=('wave', 'flux'))
+#    std.sort('wave')
+#    stdwave = std['wave']
+#    stdflux = std['flux']
+#    
+#    stdflux = stdflux-stdflux.min()
+#    stdflux = stdflux/stdflux.max()
+#    
+#    # this will be the array with atmospheric lines removed
+#    stdwave_cut = stdwave
+#    stdflux_cut = stdflux
+#    # cut the atmoshperic lines
+#    if which_side == 'red':
+#        atm_range = [[7150, 7420],[7580,7730],[7840,8450]] #red
+#    if which_side == 'blue':  
+#        #atm_range = [[6250,6340],[6850,7100],[7150, 7420],[7580,7730],[7840,8450]]
+#        atm_range = [[6250,6340],[6850,6990]]
+#    for j in atm_range:
+#        ww = (stdwave_cut < j[0]) | (stdwave_cut > j[1])
+#        stdwave_cut = stdwave_cut[ww]
+#        stdflux_cut = stdflux_cut[ww]
+#        
+#    # read the reference sky
+#    hdu = fits.open(ref_filename)
+#    y = hdu[0].data
+#    x = np.arange(len(y))
+#    A = hdu[0].header['CRVAL1']
+#    B = hdu[0].header['CDELT1']
+#    # use headers to get the wavelength calibration
+#    sky_wave = A +B *x #+ 100
+#    sky_flux =  y
+#    if which_side == 'red':
+#        ss = (sky_wave > 6500) & (sky_wave < 9200)
+#    if which_side == 'blue':
+#        ss = (sky_wave > 4500) & (sky_wave < 7200)
+#    sky_flux = sky_flux[ss]
+#    sky_wave = sky_wave[ss]
+#    
+#    # inteprolate the array
+#    # after removing the telluric I need to inteprolate along the cut to get the same file dimention 
+#    flux_interp = interp1d(stdwave_cut, stdflux_cut, bounds_error=False )
+#    new_stdflux = flux_interp(stdwave)
+#
+#    # the atmospheric file is usually 1 everywhwere 
+#    atmo = stdflux/new_stdflux
+#    atmo[atmo<0]=0
+#    if which_side == 'red':
+#        gg = (stdwave < 8500) #red
+#    if which_side == 'blue':
+#        gg = (stdwave > 5000)
+#    atmwave=stdwave[gg]
+#    atmflux = atmo[gg]
+#    
+#    #guess = (50.001, 1.001)
+#    model = model_lamp_std(guess, atmwave, atmflux)
+#    
+#    # the get_lamp_difference file takes the inteprolate model file as input 
+#    atmomodel_interp = interp1d(sky_wave, sky_flux, bounds_error=False)
+#    
+#    # run the minization giving the interpolated atmospheric file, the initial parameter and the 
+#    bestparams = fmin(get_lamp_difference_std, guess, args=(atmwave, atmflux, atmomodel_interp), maxiter=10000, disp = False)
+#    # this should be the best parameters for shift and sclae (c)
+#    print(bestparams)
+#    shift, scalefactor = bestparams[0],bestparams[1]
+#    print ('myshift: '+str(shift))
+#    wave = wave + shift
+#    atmwave = atmwave + shift
+#
+#    if verbose:
+#        plt.figure(2)
+#        fig2 = plt.figure(2)
+#        fig2.clf()
+#        # compare the reference spectrum and the extracted sky spectrum
+#        ax2 = fig2.add_subplot(2, 1, 1)
+#        ax22 = fig2.add_subplot(2, 1, 2)
+#        ax2.plot(atmwave, atmflux,'-r')
+#        ax2.axes.set_ylabel('Flux Density ($10^{16} f_{\lambda}$)')
+#        ax2.axes.set_xlabel('Wavelength ($\AA$)')
+#        ax2.plot(sky_wave, sky_flux)
+#                                    
+#        # plot the extracted sky spectrum 
+#        ax22.plot(wave, flux)
+#        ax22.axes.set_ylabel('Counts')
+#        ax22.axes.set_xlabel('wavelenght');            
+#        if pyversion>=3:
+#            input('stop std')
+#        else:
+#            raw_input('stop std')
+#            
+#    #model = model_lamp_std(bestparams, atmwave, atmflux)
+#    #plt.clf()
+#    #plt.plot(sky_wave,sky_flux,'k',linewidth=5)
+#    #plt.plot(atmwave,atmflux,'r',alpha=0.7)
+#    #plt.plot(model['wav'],model['flux'],'-m',alpha=0.7)
+#    #input('myshift')
+#    return bestparams[0],bestparams[1]
+############################################################
 
 def get_lamp_difference(params, wave, flux, skyref_interp):
     model = model_lamp(params, wave, flux)
