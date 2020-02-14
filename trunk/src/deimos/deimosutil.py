@@ -25,6 +25,7 @@ from astropy.stats import sigma_clipped_stats
 from deimos import __path__ as _path
 import sys
 import pyds9
+import matplotlib.gridspec as gridspec
 
 pyversion = sys.version_info[0]
 
@@ -341,8 +342,14 @@ def makeflat(setup_flat,dictionary,setup,key,verbose=False):
             flatlist.append(dictionary[img]['trimmed'+str(key)][0].data)
     if len(flatlist):
        stack, masterflat = flatcombine2(flatlist, verbose = verbose, response = True, Saxis=0)
+       _dir = '_'.join(setup)
+       masterflatname = 'masterflat_' +  _dir  + '_' + str(key) + '.fits'
+       _out = fits.ImageHDU(data=nosky)
+       fits.writeto(_dir + '/' + str(key) + masterflatname, masterflat, overwrite='yes')       
     else:
         masterflat = None
+
+        
     return masterflat
 
 ###############################################################
@@ -601,17 +608,18 @@ def retify_frame(img0, dictionary, ext=3, verbose=False):
         lambdas[inds] = get_dl_model(params2, dxs, dys) + col
         pickle.dump(lambdas, open('lambdas_' + str(pyversion) + '_' + str(ext) + '.dat', 'wb'))
 
-        # just plot offsets for a few of the rows across the image
-        plt.clf()
-        order = 2
-        for y in range(10, ny, 40):
-            p = plt.plot(cols, lambdas[y, cols] - xs[cols], 'o')
-            c = np.polyfit(cols, lambdas[y, cols] - xs[cols], order)
-            plt.plot(xs, np.polyval(c, xs), c=p[0].get_color(), label='row {}'.format(y))
-
-        plt.legend()
-        plt.xlabel('Column Number')
-        plt.ylabel('Wavelength Offset from Middle Row');
+    plotcurvature(ny,cols,lambdas,xs,order=2)
+    ###############
+    # just plot offsets for a few of the rows across the image
+#    plt.clf()
+#    order = 2
+#    for y in range(10, ny, 40):
+#            p = plt.plot(cols, lambdas[y, cols] - xs[cols], 'o')
+#            c = np.polyfit(cols, lambdas[y, cols] - xs[cols], order)
+#            plt.plot(xs, np.polyval(c, xs), c=p[0].get_color(), label='row {}'.format(y))
+#    plt.legend()
+#    plt.xlabel('Column Number')
+#    plt.ylabel('Wavelength Offset from Middle Row');
 
     if pyversion>=3:        
         input('\n### Solution of wavelength offset shown in Figure 3 ')
@@ -620,6 +628,83 @@ def retify_frame(img0, dictionary, ext=3, verbose=False):
     return lambdas
 
 ################################################3
+def plotcurvature(ny,cols,lambdas,xs,order=2):
+    global ax2, _ny, _cols, _lambdas,_xs, _order, lines
+    _ny = ny
+    _lambdas = lambdas
+    _xs = xs
+    _order = order
+    _cols = cols
+    
+    fig = plt.figure(1)
+    plt.clf()
+    ax2 = fig.add_subplot(1, 1, 1)
+    
+    # just plot offsets for a few of the rows across the image
+    for y in range(10, _ny, 40):
+            p = plt.plot(_cols, _lambdas[y, _cols] - _xs[_cols], 'o')
+            c = np.polyfit(_cols, _lambdas[y, _cols] - _xs[_cols], _order)
+            lines = ax2.plot(_xs, np.polyval(c, _xs), c=p[0].get_color(), label='row {}'.format(y))
+
+    plt.legend()
+    plt.xlabel('Column Number')
+    plt.ylabel('Wavelength Offset from Middle Row');
+    plt.ylim(-3,3)
+    
+    print('\n#####################3\n [a]dd  point, [d]elete point, 1,2,3,[4],5,6 (poly order) \n')    
+#    kid = fig.canvas.mpl_connect('key_press_event', onkeypress2)
+##    cid = fig.canvas.mpl_connect('button_press_event',onclick)
+    plt.draw()
+#    if pyversion>=3:
+#        input('left-click mark bad, right-click unmark, <d> remove. Return to exit ...')
+#    else:
+#        raw_input('left-click mark bad, right-click unmark, <d> remove. Return to exit ...')
+#    return
+
+#######################################################
+def  onkeypress2(event):
+    global ax2, _ny, _cols, _lambdas,_xs, _order, lines
+
+    xdata,ydata = event.xdata,event.ydata
+    print(xdata,ydata)
+    print(_cols)
+    print(_lambdas)
+#    dist = np.sqrt((xdata-np.array(_obj_wave_ds))**2+(ydata-np.array(_LogSensfunc))**2)
+#    ii = np.argmin(dist)
+
+    if event.key == 'a' :
+        print('a')
+#        idd.append(idd[-1]+1)
+#        __obj_wave_ds = list(_obj_wave_ds)
+#        __obj_wave_ds.append(xdata)
+#        _obj_wave_ds = np.array(__obj_wave_ds)
+#        __LogSensfunc = list(_LogSensfunc)
+#        __LogSensfunc.append(ydata)
+#        _LogSensfunc = np.array(__LogSensfunc)
+#        ax2.plot(xdata,ydata,'db',ms=10)
+
+    if event.key == 'd' :
+        print('d')
+#        idd.remove(ii)
+#        for i in range(len(_obj_wave_ds)):
+#            if i not in idd: nonincl.append(i)
+
+    if event.key in ['1','2','3','4','5','6','7','8','9'] :
+        _order=int(event.key)
+        print(_order)
+    
+    # just plot offsets for a few of the rows across the image
+    for y in range(10, _ny, 40):
+            p = plt.plot(_cols, _lambdas[y, _cols] - _xs[_cols], 'o')
+            c = np.polyfit(_cols, _lambdas[y, _cols] - _xs[_cols], _order)
+            lines.pop(0).remove()
+            lines = ax2.plot(_xs, np.polyval(c, _xs), c=p[0].get_color(), label='row {}'.format(y))
+
+    plt.legend()
+    plt.ylim(-3,3)
+    plt.xlabel('Column Number')
+    plt.ylabel('Wavelength Offset from Middle Row');    
+    print('just testing')
 
 #######################################################
 
@@ -1333,7 +1418,7 @@ def summary(dictionary):
 ###################################################################################
 
 def onkeypress1(event):
-    global _xx,_yy, center, lower, upper, l1,l2,u1,u2, line1, line2, line3, line5
+    global _xx,_yy, center, lower, upper, l1,l2,u1,u2, line1, line2, line3, line5, fig, gs, ax1, ax2,line6
     
     xdata,ydata = event.xdata,event.ydata
     if event.key == '6' :
@@ -1350,29 +1435,50 @@ def onkeypress1(event):
         u2 = xdata
     if event.key == 'c' :
         center = xdata
-        
+
+    
     line1.pop(0).remove()
     line2.pop(0).remove()
     line3.pop(0).remove()
     line5.pop(0).remove()
-    plt.clf()
-    line5 = plt.plot(_yy,_xx,'-b')
-    line1 = plt.plot([l1,l2],[0,0],'-k')
-    line2 = plt.plot([u1,u2],[0,0],'-k')
-    line3 = plt.plot([lower,upper],[1,1],'-k')
-    plt.plot([center],[1],'or')
+    line6.pop(0).remove()
+
+    line5 = ax1.plot(_yy,_xx,'-b')
+    line1 = ax1.plot([l1,l2],[0,0],'-k')
+    line2 = ax1.plot([u1,u2],[0,0],'-k')
+    line3 = ax1.plot([lower,upper],[1,1],'-k')
+    line6 = ax1.plot([center],[1],'or')
+    
     
 def profilespec(data,dispersion):
-    global _xx,_yy, center, lower, upper, l1,l2,u1,u2, line1, line2, line3, line5
+    global _xx,_yy, center, lower, upper, l1,l2,u1,u2, line1, line2, line3, line5, fig, gs, ax1, ax2, line6
     print("\n##################\n 1 = bg1\n 2 = bg2\n 3 = bg3\n 4 = bg4\n 6 = lower\n 7 = upper\n c = center")
-    fig = plt.figure(1)
+    fig = plt.figure(1,figsize=(7,9))
     plt.clf()
+    gs = gridspec.GridSpec(nrows=3, 
+                       ncols=2, 
+                       figure=fig, 
+                       width_ratios= [1, 1],
+                       height_ratios=[1, 1, 1],
+                       wspace=0.3,
+                       hspace=0.3)
 
+    # upper plot
+    datat = data.transpose()
+    sample = sigma_clip(data)
+    vmin = sample.mean() - 1 * sample.std()
+    vmax = sample.mean() + 3 * sample.std()
+    yvals, xvals = np.indices(datat.shape)
+    extent = (xvals.min(), xvals.max(), yvals.min(), yvals.max())
+    ax2 = fig.add_subplot(gs[0:2, 0:2])
+    ax2.imshow(datat, origin='lower', cmap='gray', aspect='auto', vmin=vmin, vmax=vmax, extent=extent)
+
+    
     if dispersion is None:
         xx = data.mean(axis=1)
     else:
         xx = data[:,dispersion-50:dispersion+50].mean(axis=1)
-    xx=  (xx - np.min(xx))/np.max(xx) + 1e-3
+    xx=  (xx - np.min(xx))/(np.max(xx)-np.min(xx)) + 1e-3
     yy = np.arange(len(xx))
 
     _xx = xx
@@ -1406,12 +1512,14 @@ def profilespec(data,dispersion):
     u1 = np.min([center + fwhm * 4, len(_xx)-10])
     u2 = np.min([center + fwhm * 5, len(_xx)-5])
 
+    ax1 = fig.add_subplot(gs[2, 0:2])
     
-    line5 = plt.plot(_yy,_xx,'-b')
-    line1 = plt.plot([l1,l2],[0,0],'-k')
-    line2 = plt.plot([u1,u2],[0,0],'-k')
-    line3 = plt.plot([lower,upper],[1,1],'-k')
-    plt.plot(center,1,'or')
+    line5 = ax1.plot(_yy,_xx,'-b')
+    line1 = ax1.plot([l1,l2],[0,0],'-k')
+    line2 = ax1.plot([u1,u2],[0,0],'-k')
+    line3 = ax1.plot([lower,upper],[1,1],'-k')
+    line6 = ax1.plot(center,1,'or')
+    
     kid = fig.canvas.mpl_connect('key_press_event',onkeypress1)
     plt.draw()
     if pyversion>=3:
@@ -1468,12 +1576,15 @@ def poly(x, y, order, rej_lo, rej_hi, niter):
 
 ########################################
 
-def tracenew(img, dictionary, key, step, verbose, polyorder, sigma, niteration):
-    data = dictionary[img]['nosky'+str(key)]
+def tracenew(img, dictionary, key, step, verbose, polyorder, sigma, niteration,rawdataname='nosky'):
+    if rawdataname=='nosky':
+        data = dictionary[img][rawdataname + str(key)]
+    else:
+        data = dictionary[img][rawdataname + str(key)][0].data
     dispersion= None
     if verbose:
         plt.clf()
-        image_plot(data,1,dictionary[img]['OBJECT'])
+        image_plot(data,2,dictionary[img]['OBJECT'])
         if pyversion>=3:
             dispersion = input('where do you want to look for the object profile [[a]ll / 300] ? [a] ')
         else:
@@ -1486,7 +1597,6 @@ def tracenew(img, dictionary, key, step, verbose, polyorder, sigma, niteration):
     if verbose:
         print(center, lower, upper, l1,l2,u1,u2)
 
-    plt.clf()
     ny, nx = data.shape
     # create 1d arays of the possible x and y values
     xs = np.arange(nx)
@@ -1522,8 +1632,7 @@ def tracenew(img, dictionary, key, step, verbose, polyorder, sigma, niteration):
 
     peakpos1 = np.polyval(polypar1, xs)
     if verbose:
-        plt.clf()
-        image_plot(data,1)
+        image_plot(data,3)
         plt.plot(loop,centerv,'or')
         plt.plot(xs,peakpos,'-g')
         plt.plot(xs,peakpos1,'-c')

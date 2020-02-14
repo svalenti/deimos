@@ -1019,76 +1019,48 @@ def extractspectrum(dictionary,img, key, _ext_trace=False, _dispersionline=False
 ### START MAIN TASK.  Get the input file.
 def opextract_new(img, firstlinetoplot, lastlinetoplot, plot_sample, DISPAXIS, readnoise, gain, apmedfiltlength,
                   colfitorder, scattercut, colfit_endmask=10, diagnostic=False, production=False,
-                  other=None, shift=0, dictionary= None, key = 3):
-    # reading aperture from the database instead of the iraf file
-    #
-    #
-    #
-    imroot = re.sub('.fits','',img) + '_' + str(key) + '_nosky'
+                  other=None, shift=0, dictionary= None, key = 3,  rawdataname='nosky',
+                  bckhigh=False, bcklow=False):
+
+    ###### imroot is only to write names for diagnostic
+    imroot = re.sub('.fits','',img) + '_' + str(key) + rawdataname
     if '.fits' in imroot:
         imroot = imroot.replace(".fits", "")
         if '.fit' in imroot:
             imroot = imroot.replace(".fit", "")
 
+    
+
     if dictionary:
-        rawdata = dictionary[img]['nosky' + str(key)]
-        
-        # if other is defined use trace from other
-        if other:
-            if other not in dictionary:
-                print('error image not in the dictionary')
-            else:
-                # use trace from a different file
-                img = other
-                
-        if img not in dictionary:
-            sys.exit('error image not in the dictionary')
+        ##### read the matrix of data
+        if rawdataname=='nosky':
+            rawdata = dictionary[img][rawdataname + str(key)]
         else:
-            coeffs = np.array(str.split(dictionary[img]['coeffs_' + str(key)],','),float)
-            bckgrintervals = np.reshape(np.array(str.split(dictionary[img]['bckgrintervals_' + str(key)],','),float),(2,2))
-            aplow = float(dictionary[img]['aplow_' + str(key)])
-            aphigh = float(dictionary[img]['aphigh_' + str(key)])
-            bckgr_niterate = int(dictionary[img]['bckgr_niterate_' + str(key)])
-            bckgr_low_reject = dictionary[img]['bckgr_low_reject_' + str(key)]
-            bckgr_high_reject = float(dictionary[img]['bckgr_high_reject_' + str(key)])
-            bckgrfunc = re.sub(" ","",dictionary[img]['bckgrfunc_' + str(key)])
-            bckgrfunc_iraforder = int(dictionary[img]['bckgrfunc_iraforder_' + str(key)])
-            displine = float(dictionary[img]['displine_' + str(key)])
+            rawdata = dictionary[img][rawdataname + str(key)][0].data
+
+
+        # read all parameters from the object
+        aplow = float(dictionary[img]['aplow_' + str(key)])
+        bckgrfunc = re.sub(" ","",dictionary[img]['bckgrfunc_' + str(key)])
+        bckgr_low_reject = dictionary[img]['bckgr_low_reject_' + str(key)]
+        displine = float(dictionary[img]['displine_' + str(key)])
+        aphigh = float(dictionary[img]['aphigh_' + str(key)])
+        bckgrfunc_iraforder = int(dictionary[img]['bckgrfunc_iraforder_' + str(key)])
+        coeffs = np.array(str.split(dictionary[img]['coeffs_' + str(key)],','),float)
+        bckgrintervals = np.reshape(np.array(str.split(dictionary[img]['bckgrintervals_' + str(key)],','),float),(2,2))
+        bckgr_niterate = int(dictionary[img]['bckgr_niterate_' + str(key)])
+        bckgr_high_reject = float(dictionary[img]['bckgr_high_reject_' + str(key)])
+            
     else:
-        print('read from iraf')
-#        imroot = re.sub('.fits','',img) + '_' + str(key) + '_nosky'
-        if dictionary:
-            hdu = dictionary[img]['nosky' + str(key)]
-            _out = fits.ImageHDU(data=hdu)
-            fits.writeto(imroot+'.fits', _out.data,overwrite='yes')
-        else:
-            print('this does not work if the nosky image is not already there')
+        print('\#### ERROR dictionary not defined ')
+
         
-        hdu = fits.open(imroot + '.fits')
-        hdr = hdu[0].header
-        rawdata = hdu[0].data
-                
-        if other:
-            # use trace from a different file
-            apparams = aperture_params(froot=other, dispaxis=DISPAXIS)
-        else:
-            apparams = aperture_params(froot=imroot, dispaxis=DISPAXIS)
-
-        if diagnostic:
-            apparams.repeat_back()
-
-        coeffs               = apparams.coeffs
-        bckgrintervals       = apparams.bckgrintervals
-        aplow                = apparams.aplow
-        aphigh               = apparams.aphigh             
-        bckgr_niterate       = apparams.bckgr_niterate     
-        bckgr_low_reject     = 5 # apparams.bckgr_low_reject   
-        bckgr_high_reject    = apparams.bckgr_high_reject  
-        bckgrfunc            = apparams.bckgrfunc          
-        bckgrfunc_iraforder  = apparams.bckgrfunc_iraforder
-        displine             = apparams.displine            
+    if bckhigh:
+        bckgr_high_reject    = float(bckhigh)
+    if bcklow:
+        bckgr_low_reject    = float(bcklow)
         
-
+        
     # If dispersion does not run along the columns, transpose
     # the data array.  Doing this once here means we can assume
     # dispersion is along columns for the rest of the program.
@@ -1116,15 +1088,24 @@ def opextract_new(img, firstlinetoplot, lastlinetoplot, plot_sample, DISPAXIS, r
 
     rootpi = np.sqrt(np.pi)  # useful later.
 
-    # Compute aperture and background limits using the
-    # parameters read from the database file.
 
-    if dictionary:
-        apcent = dictionary[img]['peakpos_'+str(key)] 
+    # if other is defined use trace from other
+    if other:
+        if other not in dictionary:
+            sys.exit('error image not in the dictionary')
+        else:
+            apcent = dictionary[other]['peakpos_'+str(key)] 
     else:
-        apcent = apparams.evaluate_curve(pixlims=(0, rawdata.shape[0] - 1))
-        # IRAF is one-indexed, so subtract 1 to make it zero-indexed.
-        apcent -= 1
+        apcent = dictionary[img]['peakpos_'+str(key)]
+        
+#    # Compute aperture and background limits using the
+#    # parameters read from the database file.
+#    if dictionary:        
+#        apcent = dictionary[img]['peakpos_'+str(key)] 
+#    else:
+#        apcent = apparams.evaluate_curve(pixlims=(0, rawdata.shape[0] - 1))
+#        # IRAF is one-indexed, so subtract 1 to make it zero-indexed.
+#        apcent -= 1
     
     # adding shift
     apcent = apcent + shift
@@ -1201,31 +1182,35 @@ def opextract_new(img, firstlinetoplot, lastlinetoplot, plot_sample, DISPAXIS, r
         xhi = crossdisp[ind3:ind4]
         yhi = ldata[ind3:ind4]
 
-        #print(xlo,ylo,xhi,yhi)
         xtofit = np.hstack((xlo, xhi))
         ytofit = np.hstack((ylo, yhi))
 
-        # fit and iterate to get rid of bad pixels.
-
-        for iteration in range(niterations):
-
-            # use legendre order from input if function is a leg
-            if bckgrfunc == 'legendre':
-                legcoefs = leg.legfit(xtofit, ytofit,
-                   bckgrfunc_iraforder - 1)
-            else:  # or default to 2nd order leg if func is something else.
-                legcoefs = leg.legfit(xtofit, ytofit, 2)
-            fit = leg.legval(xtofit, legcoefs)
-            residuals = ytofit - fit
-            stdev = np.std(residuals)
-            # fancy indexing!
-            keepindices = abs(residuals) < high_rej * stdev
-            xtofit = xtofit[keepindices]
-            ytofit = ytofit[keepindices]
-
-        # Subtract the fit from this line, and store in subbeddta
-
-        subbeddata[lineindex] = rawdata[lineindex] - leg.legval(crossdisp, legcoefs)
+        try:
+            # fit and iterate to get rid of bad pixels.
+            for iteration in range(niterations):
+                
+                # use legendre order from input if function is a leg
+                if bckgrfunc == 'legendre':
+                    legcoefs = leg.legfit(xtofit, ytofit,
+                       bckgrfunc_iraforder - 1)
+                else:  # or default to 2nd order leg if func is something else.
+                    legcoefs = leg.legfit(xtofit, ytofit, 2)
+        
+                fit = leg.legval(xtofit, legcoefs)
+                residuals = ytofit - fit
+                stdev = np.std(residuals)
+                # fancy indexing!
+                keepindices = abs(residuals) < high_rej * stdev
+                xtofit = xtofit[keepindices]
+                ytofit = ytofit[keepindices]
+                if len(xtofit)==0:
+                    print('Warning rejected too much')
+                
+            # Subtract the fit from this line, and store in subbeddta
+            subbeddata[lineindex] = rawdata[lineindex] - leg.legval(crossdisp, legcoefs)
+        except:
+            print('\##### Warning: problems subtracting the background. maybe the sky region was too small')
+            subbeddata[lineindex] = rawdata[lineindex] 
 
         # Keep the 1-d background spec at the center of the image.
         # later this is scaled up to the 'effective' width of the optimally
