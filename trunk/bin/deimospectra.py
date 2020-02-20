@@ -121,17 +121,23 @@ if __name__ == "__main__":
                     # make masterflat3 and masterflat 7
                     print(setup_flat)
                     print(setup)
-                    masterflat[3] = deimosutil.makeflat(setup_flat,dictionary,setup,3,verbose=True)
-                    masterflat[7] = deimosutil.makeflat(setup_flat,dictionary,setup,7,verbose=True)
+                    masterflat['3'] = deimosutil.makeflat(setup_flat,dictionary,setup,3,verbose=True)
+                    masterflat['7'] = deimosutil.makeflat(setup_flat,dictionary,setup,7,verbose=True)
                     for img in setup_object[setup]:
-                        for key in [3,7]:
+                        for key in ['3','7']:
                             dictionary[img]['masterflat'+str(key)]= masterflat[key]
                             dictionary[img]['trimflat'+str(key)]= dictionary[img]['trimmed'+str(key)][0].data / masterflat[key]
                 else:
-                    print('skip flatfield stage')
-                    print('I need to add to read flat from the directory')
+                    for key in ['3','7']:
+                        masterflatname = 'masterflat_' +  _dir  + '_' + str(key) + '.fits'
+                        if os.path.isfile(_dir +'/' + str(key) + '/' + masterflatname):
+                            print('found flat in the directory')
+                            hdu = fits.open(_dir + '/' + str(key)  + '/' + masterflatname)
+                            masterflat[key] = hdu[0].data
+                            for img in setup_object[setup]:
+                                dictionary[img]['masterflat'+str(key)]= masterflat[key]
+                                dictionary[img]['trimflat'+str(key)]= dictionary[img]['trimmed'+str(key)][0].data / masterflat[key]                            
                         
-
                 ########################################################
                 #   
                 ##    This stage is done once and it is not related to stages

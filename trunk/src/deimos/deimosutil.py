@@ -344,7 +344,7 @@ def makeflat(setup_flat,dictionary,setup,key,verbose=False):
        _dir = '_'.join(setup)
        masterflatname = 'masterflat_' +  _dir  + '_' + str(key) + '.fits'
        #_out = fits.ImageHDU(data=nosky)
-       fits.writeto(_dir + '/' + str(key) + masterflatname, masterflat, overwrite='yes')       
+       fits.writeto(_dir + '/' + str(key) + '/' + masterflatname, masterflat, overwrite='yes')       
     else:
         masterflat = None
 
