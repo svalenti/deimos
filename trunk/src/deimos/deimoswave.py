@@ -588,7 +588,7 @@ def onkeycazzo(event):
 
 #################################
 
-def wavesolution(reference, newarc, key, radius, edge, initial_solution, deg):
+def wavesolution(reference, newarc, key, radius, edge, initial_solution, deg, initial_shift=0.1):
 
     #  read template spectrum 
     hdu  = fits.open(reference)
@@ -614,15 +614,15 @@ def wavesolution(reference, newarc, key, radius, edge, initial_solution, deg):
     p = np.poly1d(initial_solution)
     wave = p(pixel)
     pixel = np.array(pixel)
-
-    params = (1.000001, 1.000001, 0.00001)
+    
+    params = (initial_shift, 1.000001, 0.0)
     model = model_lamp(params, wave, flux)
 
     # compute the shift between ref and observed lamp
-    guess = (4.000001,  1.00001, 0.00001)
+    guess = (initial_shift,  1.00001, 0.0)
     bestparams = fmin(get_lamp_difference, guess, args=(wave, flux, skyref_interp), maxiter=10000)
     shift = bestparams[0]
-
+    print('###',shift)
     model = model_lamp(bestparams, wave, flux)
 
     # measure the peaks of the observed lamp 

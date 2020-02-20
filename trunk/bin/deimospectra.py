@@ -26,6 +26,7 @@ from deimos import __path__ as _path
 from deimos import irafext
 from deimos import deimoswave
 import string
+
 #os.environ["XPA_METHOD"] = 'unix'
 
 from astropy.coordinates import SkyCoord
@@ -55,7 +56,7 @@ if __name__ == "__main__":
     parser.add_option("--iraf", dest="iraf", action="store_true")
     parser.add_option("--nosky", dest="nosky", action="store_true")
     parser.add_option("--stage", dest="stage", default=None, type="str",
-                      help='reduce data a single stage \t [%default, trim,sky,trace,extract,wave,flux]')
+                      help='reduce data a single stage \t [%default, trim,trim+,sky,sky+,trace,trace+,extract,extract+,wave,wave+,flux,flux+]')
     
     parser.add_option("-i", "--interactive", action="store_true",
                       dest='interactive', default=False, help='Interactive \t\t\ [%default]')
@@ -104,19 +105,19 @@ if __name__ == "__main__":
                     if np.min(dd) < 5200:
                         dictionary[img]['std']= std[np.argmin(dd)]
                     ######################################################
-                print(setup)
-                deimos.deimosutil.summary(dictionary)
+            print(setup)
+            deimos.deimosutil.summary(dictionary)
                 
             if setup[1] == 'LVMslitC':
                 _dir = '_'.join(setup)
-                if stage in [None,'trim']:
+                if stage in [None,'trim','trim+']:
                     # trim and rotate dimension 3 and 7
                     dictionary = deimosutil.trim_rotate_split(setup_object, setup_flat, setup_arc, dictionary, setup, _force)
                 else:
                     print('skip trim')
 
                 masterflat={}    
-                if stage in [None,'flat']:
+                if stage in [None, 'trim+', 'flat', 'flat+']:
                     # make masterflat3 and masterflat 7
                     print(setup_flat)
                     print(setup)
@@ -212,7 +213,7 @@ if __name__ == "__main__":
 ##############################################################################
                 #####################################
                 ##########   sky subtraction    ##################
-                if stage in [None,'sky']:
+                if stage in [None, 'sky', 'sky+', 'trim+', 'flat+']:
                     print('\n#### Sky Subtraction ')                    
                     for key in [3,7]:#lambdas:
                         if not os.path.isdir(_dir):
@@ -286,7 +287,7 @@ if __name__ == "__main__":
 #   This stage is mainly to get the aperture and background region correct
 #   the exact position of the trace will be then improved with possbile a shift
 #
-                if stage in [None,'trace']:
+                if stage in [None,'trace', 'sky+', 'trim+', 'flat+','trace+']:
                     if _iraf:
                         #
                         # use iraf and add to the dictionary all the result
@@ -326,7 +327,9 @@ if __name__ == "__main__":
                                     plt.plot(xs,peakpos1,'-c')
                                     plt.plot(xs,peakpos1 + float(dictionary[img]['aplow_'+str(key)]),'-w')
                                     plt.plot(xs,peakpos1 + float(dictionary[img]['aphigh_'+str(key)]),'-w')
-                                    
+                                    bkg = np.array(string.split(dictionary[img]['bckgrintervals_' + str(key)],','),float)
+                                    for nn in bkg:
+                                        plt.plot(xs,peakpos1 + nn,'-y')
                                     if pyversion>=3:
                                         answ = input('do you want to trace again (see figure 3) ? [y/n] [n]')
                                     else:
@@ -357,9 +360,24 @@ if __name__ == "__main__":
 
 
 #####################################################  extraction  #############################
-                if stage in [None,'extract']:
-                    for img in setup_object[setup]:
-                        for key in [3,7]:
+                if stage in [None,'extract',  'sky+', 'trim+', 'flat+', 'trace+', 'extract+']:
+                    for key in [3,7]:
+                        plt.figure(2)
+                        plt.clf()
+                        ysize = 0
+                        for mm,img0 in enumerate(setup_object[setup]):
+                            image0 = dictionary[img0]['trimmed' + str(key) ][0].data
+                            ny, nx = image0.shape
+                            ysize = np.max([ysize,ny])
+                            if 'peakpos_' + str(key) in dictionary[img0]:
+                                object0 = dictionary[img0]['OBJECT']
+                                peak0 = dictionary[img0]['peakpos_' + str(key)]
+                                xs0 = np.arange(len(peak0))
+                                plt.plot(xs0,peak0,'-', label=str(mm) + ' '+ object0)
+                        plt.ylim(0,ysize)
+                        plt.legend()
+                        
+                        for img in setup_object[setup]:
                             print('\n#### Extraction ',img)                    
                             print(img,dictionary[img]['OBJECT'],key)
                             doextraction = True
@@ -382,9 +400,13 @@ if __name__ == "__main__":
                                 deimos.deimosutil.image_plot(imm,frame=3,_title=dictionary[img]['OBJECT'])
                                 peakpos1 = dictionary[img]['peakpos_'+str(key)]
                                 xs = np.arange(len(peakpos1))
-                                plt.plot(xx,peakpos1,'-c')
-                                plt.plot(xx,peakpos1 + float(dictionary[img]['aplow_'+str(key)]),'-w')
-                                plt.plot(xx,peakpos1 + float(dictionary[img]['aphigh_'+str(key)]),'-w')                            
+                                plt.title('All Traces')
+                                plt.plot(xs,peakpos1,'-c')
+                                plt.plot(xs,peakpos1 + float(dictionary[img]['aplow_'+str(key)]),'-w')
+                                plt.plot(xs,peakpos1 + float(dictionary[img]['aphigh_'+str(key)]),'-w')                            
+                                bkg = np.array(string.split(dictionary[img]['bckgrintervals_' + str(key)],','),float)
+                                for nn in bkg:
+                                    plt.plot(xx,peakpos1 + nn,'-y')
                                 
                                 if pyversion>=3:
                                     answ = input('do you want to extract again ? [y/n] [n]')
@@ -395,104 +417,8 @@ if __name__ == "__main__":
                                     doextraction = False
                                 
                             if doextraction:
-                                if 'trimflat' + str(key) in dictionary[img]:                           
-                                    image = dictionary[img]['trimflat' + str(key) ]
-                                elif 'trimmed' + str(key) in dictionary[img]:
-                                    image = dictionary[img]['trimmed' + str(key) ][0].data
-                                    
-                                sky = dictionary[img]['sky' + str(key)]
-                                nosky = image - sky
-                                ny, nx = nosky.shape
-                                xs = np.arange(nx)
-                                peak = dictionary[img]['peakpos_' + str(key)]
-                                plt.figure(3)
-                                plt.clf()
-                                deimos.deimosutil.image_plot(nosky,3,dictionary[img]['OBJECT'])
-                                plt.plot(xs,peak,'-r')
-                                plt.plot(xx,peak + float(dictionary[img]['aplow_'+str(key)]),'-w')
-                                plt.plot(xx,peak + float(dictionary[img]['aphigh_'+str(key)]),'-w')
-                                bkg = np.array(string.split(dictionary[img]['bckgrintervals_' + str(key)],','),float)
-                                for nn in bkg:
-                                    plt.plot(xx,peak + nn,'-y')
-                                othertrace = None
-                                _shift=0
-                                if pyversion>=3:
-                                    answ = input('trace ok [[y]/n] (see figure 3)? ')
-                                else:
-                                    answ = raw_input('trace ok [[y]/n]  (see figure 3)? ')
-                                    
-                                if not answ:
-                                    answ='y'
-                                if answ in ['Yes','yes','Y','y']:
-                                    othertrace = None
-                                else:
-                                    for image in setup_object[setup]:
-                                        print(image,setup)
-                                    for image in setup_object[setup]:
-                                        _shift=0
-                                        peak = dictionary[image]['peakpos_' + str(key)]
-                                        plt.figure(3)
-                                        plt.clf()
-                                        deimos.deimosutil.image_plot(nosky,3)
-                                        plt.plot(xs,peak,'-b')
-                                        plt.plot(xx,peak + float(dictionary[image]['aplow_'+str(key)]),'-w')
-                                        plt.plot(xx,peak + float(dictionary[image]['aphigh_'+str(key)]),'-w')
-                                        bkg = np.array(string.split(dictionary[image]['bckgrintervals_' + str(key)],','),float)
-                                        for nn in bkg:
-                                            plt.plot(xx,peak + nn,'-y')
-                                            
-                                        if pyversion>=3:
-                                            answ0 = input('is trace ok (different object) [y] , [n], [s] (need shift)  [n]? ')
-                                        else:
-                                            answ0 = raw_input('is trace ok (different object) [y] , [n], [s] (need shift)  [n]? ')
-                                            
-                                        if not answ0:
-                                            answ0='n'
-                                        if answ0 in ['y','Y','yes']:
-                                            othertrace = image
-                                            break
-                                        elif answ0 in ['S','s','shift']:
-                                            othertrace = image
-                                            answ0='s'
-                                            while answ0=='s':
-                                                _shift=0
-                                                if pyversion>=3:
-                                                    _shift = input('how much shift ? ')
-                                                else:
-                                                    _shift = raw_input('how much shift ? [0] ')
-                                                    if not _shift:
-                                                        _shift = 0
-                                                _shift = float(_shift)
-                                                plt.plot(xs,peak + _shift ,'.')
-                                                if pyversion>=3:
-                                                    answ0 = input('is shift ok  y/[n] ?')
-                                                else:
-                                                    answ0 = raw_input('is shift ok  y/[n] ?')
-                                                if answ0 in ['NO','N','n','']:
-                                                    answ0='s'
-                                            break
-                                print(_shift)
-                                print(othertrace)
-                                if othertrace:
-                                    meta ={
-                                        'aplow':               dictionary[img]['aplow_' + str(key)],
-                                        'bckgrfunc':           dictionary[img]['bckgrfunc_' + str(key)],
-                                        'bckgr_low_reject':    dictionary[img]['bckgr_low_reject_' + str(key)],
-                                        'displine':            dictionary[img]['displine_' + str(key)],
-                                        'aphigh':              dictionary[img]['aphigh_' + str(key)],
-                                        'bckgrfunc_iraforder': dictionary[img]['bckgrfunc_iraforder_' + str(key)],
-                                        'coeffs':              dictionary[img]['coeffs_' + str(key)],
-                                        'bckgrintervals':      dictionary[img]['bckgrintervals_' + str(key)],
-                                        'bckgr_niterate':      dictionary[img]['bckgr_niterate_' + str(key)],
-                                        'bckgr_high_reject':   dictionary[img]['bckgr_high_reject_' + str(key)],
-                                        }
-                                    apcent = dictionary[othertrace]['peakpos_'+str(key)]
-                                    trace = apcent + _shift
-                                    dictionary[img]['peakpos_'+str(key)] = trace
-                                    imgtrace = re.sub('.fits','',img) + '_' + str(key) + '_trace.ascii'
-                                    output = _dir + '/' + str(key)  + '/' + imgtrace                                
-                                    # write the new trace for this object
-                                    deimos.deimosutil.writetrace(trace,meta, 'trace', output)
+                                dictionary = deimos.deimosutil.interactive_extraction(dictionary,img, key, setup_object[setup], _nsky, interactive=True)
+
                                     
                   ############################################################################################################                        
                                 ## write nosky file from dictionary
@@ -500,6 +426,8 @@ if __name__ == "__main__":
                                 gain = 1
                                 apmedfiltlength = 61 # no idea what is it
                                 colfitorder, scattercut = 15, 25  # no idea what is it
+                                othertrace = None
+                                _shift = 0
                                 if _nsky:
                                    print('\n##### Warning: extract on the trimmed image instead of the sky')
                                    _rawdataname = 'trimmed'
@@ -579,37 +507,40 @@ if __name__ == "__main__":
 # We are missing at least a check with sky line (at the moment sky is plotted vs sky reference, missing cross correlation
 #
 ##################################################################
-                if stage in [None,'wave']:
-                    print('\n### Select which arc do you want to use ')
-                    for img in setup_arc[setup]:
-                        if 'trimflat' + str(key)  in dictionary[img]:
-                            image = dictionary[img]['trimflat' + str(key)]
-                        elif 'trimmed' + str(key)  in dictionary[img]:
-                            image = dictionary[img]['trimmed' + str(key)][0].data
-                            deimosutil.image_plot(image,3,dictionary[img]['OBJECT'])
-                        if pyversion>=3:
-                            input(' see figure 3, ' + img+' ')
+                if stage in [None,'wave', 'sky+', 'trim+', 'flat+','trace+', 'extract+', 'wave+']:
+                    arc = {}
+                    for key in [3,7]:
+                        print('\n### Select which arc do you want to use ')
+                        for img in setup_arc[setup]:
+                            if 'trimflat' + str(key)  in dictionary[img]:
+                                image = dictionary[img]['trimflat' + str(key)]
+                            elif 'trimmed' + str(key)  in dictionary[img]:
+                                image = dictionary[img]['trimmed' + str(key)][0].data
+                                deimosutil.image_plot(image,3,dictionary[img]['OBJECT'])
+                            if pyversion>=3:
+                                input(' see figure 3, ' + img+' ')
+                            else:
+                                raw_input(' see figure 3, '  + img+' ')
+                                                
+                        if pyversion>=3:                            
+                            arc0 = input('which image do you want to use to do wavelegnth calibration [' + str(setup_arc[setup][0]) + ']? ')
                         else:
-                            raw_input(' see figure 3, '  + img+' ')
-                                            
-                    if pyversion>=3:                            
-                        arc = input('which image do you want to use to do wavelegnth calibration [' + str(setup_arc[setup][0]) + ']? ')
-                    else:
-                        arc = raw_input('which image do you want to use to do wavelength caibration [' + str(setup_arc[setup][0]) + ']? ')
-                    if not arc:
-                        arc = setup_arc[setup][0]
-        
-                    # if you do not observe all arc together you can combine the frames 
-                    if ',' in arc:
-                        import string
-                        imgarclist = string.split(arc,',')
-                        dictionary['arcmerge_' + str(key)] = dictionary[imgarclist[0]]
-                        dictionary['arcmerge_' + str(key)]['trimmed'+str(key)][0].data = dictionary[imgarclist[1]]['trimmed'+str(key)][0].data +\
-                                                                                         dictionary[imgarclist[0]]['trimmed'+str(key)][0].data
-                        arc = 'arcmerge_' + str(key)
-                        raw_input('stop here')
-        
-        
+                            arc0 = raw_input('which image do you want to use to do wavelength caibration [' + str(setup_arc[setup][0]) + ']? ')
+                        if not arc0:
+                            arc0 = setup_arc[setup][0]
+            
+                        # if you do not observe all arc together you can combine the frames 
+                        if ',' in arc0:
+                            import string
+                            imgarclist = string.split(arc0,',')
+                            dictionary['arcmerge_' + str(key)] = dictionary[imgarclist[0]]
+                            dictionary['arcmerge_' + str(key)]['trimmed'+str(key)][0].data = dictionary[imgarclist[1]]['trimmed'+str(key)][0].data +\
+                                                                                             dictionary[imgarclist[0]]['trimmed'+str(key)][0].data
+                            arc[key] = 'arcmerge_' + str(key)
+                        else:
+                            arc[key] = arc0
+                            
+##################################################################################################
                     # load the sky reference
                     skyref = np.genfromtxt(os.path.join(deimos.__path__[0]+'/resources//sky/','UVES_nightsky_lowres.dat'), names='wav, flux')
                     # normalize sky spectrum
@@ -617,13 +548,16 @@ if __name__ == "__main__":
                     skyref['flux'] = skyref['flux']/np.max(skyref['flux'])
                     # interpolate the sky template
                     skyref_interp = interp1d(skyref['wav'], skyref['flux'], bounds_error=False)
-                        
+
                     sameforall = {}
-                    for img in setup_object[setup]:
-                        for key in [3,7]:
+                    for key in [3,7]:
+                        for img in setup_object[setup]:
                             print('\n#### wavelength solution: ',img)                    
                             print(img,dictionary[img]['OBJECT'],key)
+                            dowave = False
+                            doshift = False
         
+##################################################################################################################################        
                             # use my sky for wavelength check for scince frames
                             sky = np.array(dictionary[img]['mysky' + str(key)])
                             # use the flux for wavelength check for standards  frames
@@ -634,7 +568,28 @@ if __name__ == "__main__":
                             # normalize my sky spectrum
                             sky = sky - np.min(sky)
                             sky = sky / np.max(sky)
+##################################################################################################################################
+                            #####    load the arc trimmed image and extract the arc in the same way the object was extracted
+                            peakpos = np.array(dictionary[img]['peakpos_' + str(key)])
+                            aplow = dictionary[img]['aplow_' + str(key)]
+                            aphigh = dictionary[img]['aphigh_' + str(key)]
                             
+                            if 'trimflat' + str(key) in dictionary[arc[key]]:                           
+                                imagearc = np.array(dictionary[arc[key]]['trimflat' + str(key)])
+                            elif 'trimmed' + str(key) in dictionary[arc[key]]:
+                                imagearc = np.array(dictionary[arc[key]]['trimmed' + str(key)])[0].data
+                                
+                            ny, nx = imagearc.shape
+                            # create 1d arays of the possible x and y values
+                            xs = np.arange(nx)
+                            ys = np.arange(ny)
+                            # pixel coordinates for each pixel                        
+                            yvals, xvals = np.indices(imagearc.shape)
+                            aa = [(yvals> peakpos + aplow) & (yvals < peakpos + aphigh )][0]*1
+                            arcsum = imagearc * aa
+                            arcspec = arcsum.sum(axis=0)
+####################################################################################################################################
+                                                             
                             answ = False
                             if key in sameforall:
                                 if pyversion>=3:                            
@@ -654,9 +609,12 @@ if __name__ == "__main__":
                                 # use solution computed before
                                 wave = sameforall[key]
                                 dowave = False
+                                doshift = True
+                
                             else:
                                 # do a new calibration
                                 dowave = True
+                                doshift = True
                                 
                                 if 'wave'+str(key) in dictionary[img] and _force is False:
                                     # there is a calibration already in the dictionary
@@ -674,57 +632,36 @@ if __name__ == "__main__":
                                     if not answ: answ = 'n'
                                     if answ in ['n','N','NO','no']:
                                         dowave = False
-                                else:
-                                    # wave not defined I really need ot do the wave
-                                    dowave = True
-                                                                    
-                                if dowave:
-                                    print('\n#### wavelength solution ',img)
-                                    print(arc)
-                                    dictionary[img]['arcfile' + str(key)]= arc
-                                    print(dictionary[img]['OBJECT'])
+                                        doshift = False
+##################################################################################################
+                            if dowave:
+                                print('\n#### wavelength solution ',img)
+                                print(arc[key])
+                                print(dictionary[img]['OBJECT'])
+                                dictionary[img]['arcfile' + str(key)]= arc[key]
+                                dictionary[img]['arcspec' + str(key)] = arcspec    
+                                imgout = 'arc_'+ _dir + '_' + str(key) + 'ascii'
+                                np.savetxt(imgout, np.c_[xs, arcspec ], header='pixel  flux ')
+                                ################################################################
+                                reference = os.path.join(deimos.__path__[0]+'/resources/wave/', ('/').join(setup),str(key),'arc.fits')
+                                initial_solution = deimosutil.poly_arc[key]
+                                radius = 10
+                                edges = 7
+                                deg = 5
+                                initial_shift = -100.0
                                     
-                                    #####    load the arc trimmed image and extract the arc in the same way the object was extracted
-                                    peakpos = np.array(dictionary[img]['peakpos_' + str(key)])
-                                    aplow = dictionary[img]['aplow_' + str(key)]
-                                    aphigh = dictionary[img]['aphigh_' + str(key)]
-                                    
-                                    if 'trimflat' + str(key) in dictionary[arc]:                           
-                                        imagearc = np.array(dictionary[arc]['trimflat' + str(key)])
-                                    elif 'trimmed' + str(key) in dictionary[arc]:
-                                        imagearc = np.array(dictionary[arc]['trimmed' + str(key)])[0].data
-                                        
-                                    ny, nx = imagearc.shape
-                                    # create 1d arays of the possible x and y values
-                                    xs = np.arange(nx)
-                                    ys = np.arange(ny)
-                                    # pixel coordinates for each pixel                        
-                                    yvals, xvals = np.indices(imagearc.shape)
-                                    aa = [(yvals> peakpos + aplow) & (yvals < peakpos + aphigh )][0]*1
-                                    arcsum = imagearc * aa
-                                    arcspec = arcsum.sum(axis=0)
-                                    dictionary[img]['arcspec' + str(key)] = arcspec
-                                    imgout = 'arc_'+ _dir + '_' + str(key) + 'ascii'
-                                    np.savetxt(imgout, np.c_[xs, arcspec ], header='pixel  flux ')
-                                    ################################################################
-                                    reference = os.path.join(deimos.__path__[0]+'/resources/wave/', ('/').join(setup),str(key),'arc.fits')
-                                    initial_solution = deimosutil.poly_arc[key]
-                                    radius = 10
-                                    edges = 7
-                                    deg = 5
-                                    
-                                    from deimos import deimoswave
-                                    finalsolution = deimos.deimoswave.wavesolution(reference, imgout, key, radius, edges, initial_solution, deg)
-                                    print(finalsolution)
-                                    p = np.poly1d(finalsolution)
-                                    wave = p(xs)
-                                    wave = sameforall[key]
-        
-                                    
+                                finalsolution = deimos.deimoswave.wavesolution(reference, imgout, key, radius, edges, initial_solution, deg, initial_shift)
+                                print(finalsolution)
+                                p = np.poly1d(finalsolution)
+                                wave = p(xs)
+                                sameforall[key]  = wave    
 #################################################   check wave calibration    #################################################
-                                # Here I check the wave solution for standard and object separetly
+                            # Here I check the wave solution for standard and object separetly
+                            if doshift:
+                                dictionary[img]['arcfile' + str(key)]= arc[key]
+                                dictionary[img]['arcspec' + str(key)] = arcspec    
                                 shift = 0
-                                if 'std' not in dictionary[img].keys():                                
+                                if 'std' not in dictionary[img].keys():
                                     # check if it is monotonically increasing
                                     dxa = np.diff(wave)
                                     if (dxa > 0).all() is False:
@@ -744,7 +681,7 @@ if __name__ == "__main__":
         
                                     print('shift the spectrum of ',shift)        
                                     #  wavelength calibration in the database
-                                    wave = p(xs) + shift
+                                    wave = wave + shift
                                         
                                     if verbose:
                                         plt.figure(2)
@@ -765,25 +702,20 @@ if __name__ == "__main__":
                                         if pyversion>=3:
                                             input('stop here')
                                         else:
-                                            raw_input('stop here')
-        
+                                            raw_input('stop here')        
                                 else:
-                                    #
                                     ref_filename = os.path.join(deimos.__path__[0]+'/resources/sky/','std_telluric.fits')
                                     imgout = 'std_'+ _dir + '_' + str(key) + '.ascii'
-                                    np.savetxt(imgout, np.c_[wave, flux ], header='wave  flux ')
-                                    
+                                    np.savetxt(imgout, np.c_[wave, flux ], header='wave  flux ')        
                                     shift, scalefactor = deimos.deimoswave.checkwithtelluric(wave, flux , key, ref_filename, guess=(0.001,1.0001), verbose=True)
                                     print ('myshift: '+str(shift))
-                                    
                                     print('shift the spectrum of ',shift)        
                                     #  wavelength calibration in the database
-                                    wave = p(xs) + shift
-        
-                                    
+                                    wave = wave + shift
+################################################################################################################
+                            if dowave or doshift:
                                 # adding the wave solution to the dictionary   
                                 dictionary[img]['wave' + str(key)]= wave
-        
                                 # storing the wave solution in the data folder
                                 spec_opt = dictionary[img]['spec_opt' + str(key)]
                                 spec_basic = dictionary[img]['spec_basic' + str(key)]
@@ -801,7 +733,7 @@ if __name__ == "__main__":
     #################################################################3####################################    
     #################################################################3####################################
     ############# make response
-                if stage in [None,'response']:
+                if stage in [None,'response','sky+', 'trim+', 'flat+','trace+', 'extract+', 'wave+', 'response+']:
                     std = []
                     for img in setup_object[setup]:
                         if 'std' in dictionary[img].keys():
@@ -813,6 +745,11 @@ if __name__ == "__main__":
                             doresponse = True
                             if 'response'+str(key) in dictionary[img] and _force==False:
                                 print(img,dictionary[img]['OBJECT'],key)
+                                response = dictionary[img]['response'+str(key)]
+                                wave = dictionary[img]['wave'+str(key)]
+                                plt.figure(2)
+                                plt.clf()
+                                plt.plot(wave,np.log10(response),'ob')
                                 if pyversion>=3:
                                     answ = input('do you want to comute the response again ? [y/n] [n]')
                                 else:
@@ -830,12 +767,15 @@ if __name__ == "__main__":
                                     if len(liststd)>1:
                                         plt.figure(1)
                                         plt.clf()
+                                        symbol='|1234x'
+                                        jj=0
                                         for standard in liststd:
                                             print(standard)
                                             data = np.genfromtxt(standard)
                                             x,y,z = zip(*data)
                                             std_flux = deimos.deimosutil._mag2flux(np.array(x),np.array(y))              
-                                            plt.plot(x,std_flux,'-',label=re.sub(_path[0],'',standard))
+                                            plt.plot(x,std_flux,symbol[jj],label=re.sub(_path[0],'',standard))
+                                            jj = jj+1
                                         plt.legend()
                                         if pyversion>=3:
                                             standard = input('few standard file in the database, which one do you want to use?')
@@ -883,15 +823,22 @@ if __name__ == "__main__":
                     print('skip sensitivitity function step')
                 #########################################################         
                 ######################################################### 
-                if stage in [None,'flux']:
+                if stage in [None,'flux', 'sky+', 'trim+', 'flat+','trace+', 'extract+', 'wave+', 'response+', 'flux+']:
                     #  chose sensitivity
                     use_standard = {}
                     for key in [3,7]:
                         std=[]
                         use_standard[key] = None
+                        plt.figure(1)
+                        plt.clf()
                         for img in setup_object[setup]:
                             if 'response' + str(key) in dictionary[img] and 'std' in dictionary[img]:
                                 std.append(img)
+                                sens = dictionary[img]['response' +str(key)]
+                                wave = dictionary[img]['wave' +str(key)]
+                                name = dictionary[img]['OBJECT']  + ' ' + str(img)
+                                plt.plot(wave,np.log10(sens),'-', label=name)
+                        plt.legend()
                         if len(std)>1:
                             print(std)
                             if pyversion>=3:
@@ -944,6 +891,7 @@ if __name__ == "__main__":
                                         plt.clf()
                                         fig2 = plt.figure(2)                            
                                         plt.clf()
+                                        plt.title(dictionary[img]['OBJECT'])
                                         plt.plot(wave, spec_opt * respfn, label='Calibrated Spectrum')
                                         if pyversion>=3:
                                             input('look final spectrum')
@@ -987,6 +935,144 @@ if __name__ == "__main__":
     
     
     
+#                                if pyversion>=3:
+#                                    answ = input('stop here')
+#                                else:
+#                                    answ = raw_input('stop here')                               
+#                                if 'trimflat' + str(key) in dictionary[img]:                           
+#                                    image = dictionary[img]['trimflat' + str(key) ]
+#                                elif 'trimmed' + str(key) in dictionary[img]:
+#                                    image = dictionary[img]['trimmed' + str(key) ][0].data                                   
+#                                sky = dictionary[img]['sky' + str(key)]
+#                                nosky = image - sky
+#                                ny, nx = nosky.shape
+#                                xs = np.arange(nx)
+#                                peak = dictionary[img]['peakpos_' + str(key)]
+#                                plt.figure(3)
+#                                plt.clf()
+#                                deimos.deimosutil.image_plot(nosky,3,dictionary[img]['OBJECT'])
+#                                plt.plot(xs,peak,'-r')
+#                                plt.plot(xs,peak + float(dictionary[img]['aplow_'+str(key)]),'-w')
+#                                plt.plot(xs,peak + float(dictionary[img]['aphigh_'+str(key)]),'-w')
+#                                bkg = np.array(string.split(dictionary[img]['bckgrintervals_' + str(key)],','),float)
+#                                for nn in bkg:
+#                                    plt.plot(xs,peak + nn,'-y')
+#                                othertrace = None
+#                                _shift=0
+#                                if pyversion>=3:
+#                                    answ = input('Do you want to use a different trace [1,2,3,4,5] [n] ?\n (see figure 2)\n[n] use object frame,\n1,2,3,4,5 (trace of different object ')
+#                                else:
+#                                    answ = raw_input('Do you want to use a different trace [1,2,3,4,5] [n] ?\n (see figure 2)\n[n] use object frame,\n1,2,3,4,5 (trace of different object ')
+#                                if not answ:
+#                                    answ='n'
+#                                if answ in ['No','N','n','NO']:
+#                                    othertrace = None
+#                                else:
+#                                    othertrace = setup_object[setup][int(answ)]
+#                                print(othertrace)
+#
+#                                
+#                                if othertrace:
+#                                    # take the trace from the other file but the rest of parameters from the target
+#                                    meta ={
+#                                       'aplow':               dictionary[img]['aplow_' + str(key)],
+#                                        'bckgrfunc':           dictionary[img]['bckgrfunc_' + str(key)],
+#                                        'bckgr_low_reject':    dictionary[img]['bckgr_low_reject_' + str(key)],
+#                                        'displine':            dictionary[img]['displine_' + str(key)],
+#                                        'aphigh':              dictionary[img]['aphigh_' + str(key)],
+#                                        'bckgrfunc_iraforder': dictionary[img]['bckgrfunc_iraforder_' + str(key)],
+#                                        'coeffs':              dictionary[img]['coeffs_' + str(key)],
+#                                        'bckgrintervals':      dictionary[img]['bckgrintervals_' + str(key)],
+#                                        'bckgr_niterate':      dictionary[img]['bckgr_niterate_' + str(key)],
+#                                        'bckgr_high_reject':   dictionary[img]['bckgr_high_reject_' + str(key)],
+#                                        }
+#                                    apcent = dictionary[othertrace]['peakpos_'+str(key)]
+#                                    trace = apcent + _shift
+#                                    dictionary[img]['peakpos_'+str(key)] = trace
+#                                    imgtrace = re.sub('.fits','',img) + '_' + str(key) + '_trace.ascii'
+#                                    output = _dir + '/' + str(key)  + '/' + imgtrace                                
+#                                    # write the new trace for this object
+#                                    deimos.deimosutil.writetrace(trace,meta, 'trace', output)
+#                                if pyversion>=3:
+#                                    answ = input('stop here')
+#                                else:
+#                                    answ = raw_input('stop here')                               
+#                                
+#                                if pyversion>=3:
+#                                    answ = input('trace ok [[y]/n] (see figure 3)? ')
+#                                else:
+#                                    answ = raw_input('trace ok [[y]/n]  (see figure 3)? ')                                    
+#                                if not answ:
+#                                    answ='y'
+#                                if answ in ['Yes','yes','Y','y']:
+#                                    othertrace = None
+#                                else:
+#                                    for image in setup_object[setup]:
+#                                        print(image,setup)
+#                                    for image in setup_object[setup]:
+#                                        _shift=0
+#                                        peak = dictionary[image]['peakpos_' + str(key)]
+#                                        plt.figure(3)
+#                                        plt.clf()
+#                                        deimos.deimosutil.image_plot(nosky,3)
+#                                        plt.plot(xs,peak,'-b')
+#                                        plt.plot(xs,peak + float(dictionary[image]['aplow_'+str(key)]),'-w')
+#                                        plt.plot(xs,peak + float(dictionary[image]['aphigh_'+str(key)]),'-w')
+#                                        bkg = np.array(string.split(dictionary[image]['bckgrintervals_' + str(key)],','),float)
+#                                        for nn in bkg:
+#                                            plt.plot(xs,peak + nn,'-y')
+#                                            
+#                                        if pyversion>=3:
+#                                            answ0 = input('is trace ok (different object) [y] , [n], [s] (need shift)  [n]? ')
+#                                        else:
+#                                            answ0 = raw_input('is trace ok (different object) [y] , [n], [s] (need shift)  [n]? ')                                            
+#                                        if not answ0:
+#                                            answ0='n'
+#                                        if answ0 in ['y','Y','yes']:
+#                                            othertrace = image
+#                                            break
+#                                        elif answ0 in ['S','s','shift']:
+#                                            othertrace = image
+#                                            answ0='s'
+#                                            while answ0=='s':
+#                                                _shift=0
+#                                                if pyversion>=3:
+#                                                    _shift = input('how much shift ? ')
+#                                                else:
+#                                                    _shift = raw_input('how much shift ? [0] ')
+#                                                    if not _shift:
+#                                                        _shift = 0
+#                                                _shift = float(_shift)
+#                                                plt.plot(xs,peak + _shift ,'.')
+#                                                if pyversion>=3:
+#                                                    answ0 = input('is shift ok  y/[n] ?')
+#                                                else:
+#                                                    answ0 = raw_input('is shift ok  y/[n] ?')
+#                                                if answ0 in ['NO','N','n','']:
+#                                                    answ0='s'
+#                                            break
+#                                print(_shift)
+#                                print(othertrace)
+#                                if othertrace:
+#                                    meta ={
+#                                        'aplow':               dictionary[img]['aplow_' + str(key)],
+#                                        'bckgrfunc':           dictionary[img]['bckgrfunc_' + str(key)],
+#                                        'bckgr_low_reject':    dictionary[img]['bckgr_low_reject_' + str(key)],
+#                                        'displine':            dictionary[img]['displine_' + str(key)],
+#                                        'aphigh':              dictionary[img]['aphigh_' + str(key)],
+#                                        'bckgrfunc_iraforder': dictionary[img]['bckgrfunc_iraforder_' + str(key)],
+#                                        'coeffs':              dictionary[img]['coeffs_' + str(key)],
+#                                        'bckgrintervals':      dictionary[img]['bckgrintervals_' + str(key)],
+#                                        'bckgr_niterate':      dictionary[img]['bckgr_niterate_' + str(key)],
+#                                        'bckgr_high_reject':   dictionary[img]['bckgr_high_reject_' + str(key)],
+#                                        }
+#                                    apcent = dictionary[othertrace]['peakpos_'+str(key)]
+#                                    trace = apcent + _shift
+#                                    dictionary[img]['peakpos_'+str(key)] = trace
+#                                    imgtrace = re.sub('.fits','',img) + '_' + str(key) + '_trace.ascii'
+#                                    output = _dir + '/' + str(key)  + '/' + imgtrace                                
+#                                    # write the new trace for this object
+#                                    deimos.deimosutil.writetrace(trace,meta, 'trace', output)
     
     
     

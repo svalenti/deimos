@@ -149,7 +149,6 @@ def checkalldata(directory=False,verbose=False):
             _grism = dictionary[img]['GRATENAM']
             _slit = dictionary[img]['SLMSKNAM']        
             setup = (_grism,_slit)
-            print(setup)
             if dictionary[img]['type']=='object':
                 if (_grism,_slit) not in setup_object:
                     setup_object[_grism,_slit]=[]
@@ -166,6 +165,7 @@ def checkalldata(directory=False,verbose=False):
                 setup_flat[_grism,_slit].append(img)
         
             _dir = '_'.join(setup)
+            print(img,setup,dictionary[img]['OBJECT'])
             
             for key in ['3','7']:
                 imgtrimmed = re.sub('.fits','',img) + '_' + str(key) + '_trimmed.fits'
@@ -202,46 +202,40 @@ def checkalldata(directory=False,verbose=False):
                 if os.path.isfile(_dir + '/' + str(key) + '/' + imgflux):
                     aa = ascii.read(_dir + '/' + str(key) + '/' + imgflux)
                     if key==7:
-                        dictionary[img]['spec_basic' + str(key)] = aa['spec_basic']#[::-1]
-                        dictionary[img]['spec_opt' + str(key)] = aa['spec_opt']#[::-1]
-                        dictionary[img]['skybg_opt' + str(key)] = aa['skybg_opt']#[::-1]
-                        dictionary[img]['spec_var' + str(key)] = aa['spec_var']#[::-1]
-                        dictionary[img]['mysky' + str(key)] = aa['mysky']#[::-1]
-                        dictionary[img]['mybasic' + str(key)] = aa['mybasic']#[::-1]
-                        dictionary[img]['wave' + str(key)] = aa['wave']#[::-1]
-                        dictionary[img]['arcspec' + str(key)] = aa['arcspec']#[::-1]
+#                        dictionary[img]['spec_basic' + str(key)] = aa['spec_basic']#[::-1]
+#                        dictionary[img]['spec_opt' + str(key)] = aa['spec_opt']#[::-1]
+#                        dictionary[img]['skybg_opt' + str(key)] = aa['skybg_opt']#[::-1]
+#                        dictionary[img]['spec_var' + str(key)] = aa['spec_var']#[::-1]
+#                        dictionary[img]['mysky' + str(key)] = aa['mysky']#[::-1]
+#                        dictionary[img]['mybasic' + str(key)] = aa['mybasic']#[::-1]
+#                        dictionary[img]['wave' + str(key)] = aa['wave']#[::-1]
+#                        dictionary[img]['arcspec' + str(key)] = aa['arcspec']#[::-1]
                         dictionary[img]['response' + str(key)] = aa['response']#[::-1]
                         dictionary[img]['spec_flux' + str(key)] = aa['spec_flux']#[::-1]
                     else:
-                        dictionary[img]['spec_basic' + str(key)] = aa['spec_basic']
-                        dictionary[img]['spec_opt' + str(key)] = aa['spec_opt']
-                        dictionary[img]['skybg_opt' + str(key)] = aa['skybg_opt']
-                        dictionary[img]['spec_var' + str(key)] = aa['spec_var']
-                        dictionary[img]['mysky' + str(key)] = aa['mysky']
-                        dictionary[img]['mybasic' + str(key)] = aa['mybasic']
-                        dictionary[img]['wave' + str(key)] = aa['wave']
-                        dictionary[img]['arcspec' + str(key)] = aa['arcspec']
+#                        dictionary[img]['spec_basic' + str(key)] = aa['spec_basic']
+#                        dictionary[img]['spec_opt' + str(key)] = aa['spec_opt']
+#                        dictionary[img]['skybg_opt' + str(key)] = aa['skybg_opt']
+#                        dictionary[img]['spec_var' + str(key)] = aa['spec_var']
+#                        dictionary[img]['mysky' + str(key)] = aa['mysky']
+#                        dictionary[img]['mybasic' + str(key)] = aa['mybasic']
+#                        dictionary[img]['wave' + str(key)] = aa['wave']
+#                        dictionary[img]['arcspec' + str(key)] = aa['arcspec']
                         dictionary[img]['response' + str(key)] = aa['response']
                         dictionary[img]['spec_flux' + str(key)] = aa['spec_flux']
-
-                elif os.path.isfile(_dir + '/' + str(key) + '/' + imgresponse):
-                    aa = ascii.read(_dir + '/' + str(key) + '/' + imgresponse)
-                    dictionary[img]['wave' + str(key)] = aa['wave']
-                    dictionary[img]['response' + str(key)] = aa['response']
                         
-                elif os.path.isfile(_dir + '/' + str(key) + '/' + imgwave):
+                if os.path.isfile(_dir + '/' + str(key) + '/' + imgwave):
                     aa = ascii.read(_dir + '/' + str(key) + '/' + imgwave)
-                    dictionary[img]['spec_basic' + str(key)] = aa['spec_basic']
-                    dictionary[img]['spec_opt' + str(key)] = aa['spec_opt']
-                    dictionary[img]['skybg_opt' + str(key)] = aa['skybg_opt']
-                    dictionary[img]['spec_var' + str(key)] = aa['spec_var']
-                    dictionary[img]['mysky' + str(key)] = aa['mysky']
-                    dictionary[img]['mybasic' + str(key)] = aa['mybasic']
+#                    dictionary[img]['spec_basic' + str(key)] = aa['spec_basic']
+#                    dictionary[img]['spec_opt' + str(key)] = aa['spec_opt']
+#                    dictionary[img]['skybg_opt' + str(key)] = aa['skybg_opt']
+#                    dictionary[img]['spec_var' + str(key)] = aa['spec_var']
+#                    dictionary[img]['mysky' + str(key)] = aa['mysky']
+#                    dictionary[img]['mybasic' + str(key)] = aa['mybasic']
                     dictionary[img]['wave' + str(key)] = aa['wave']
                     dictionary[img]['arcspec' + str(key)] = aa['arcspec']
-
                       
-                elif os.path.isfile(_dir + '/' + str(key) + '/' + imgex):
+                if os.path.isfile(_dir + '/' + str(key) + '/' + imgex):
                     aa = ascii.read(_dir + '/' + str(key) + '/' + imgex)
                     dictionary[img]['spec_basic' + str(key)] = aa['spec_basic']
                     dictionary[img]['spec_opt' + str(key)] = aa['spec_opt']
@@ -249,6 +243,11 @@ def checkalldata(directory=False,verbose=False):
                     dictionary[img]['spec_var' + str(key)] = aa['spec_var']
                     dictionary[img]['mysky' + str(key)] = aa['mysky']
                     dictionary[img]['mybasic' + str(key)] = aa['mybasic']
+                    
+                if os.path.isfile(_dir + '/' + str(key) + '/' + imgresponse):
+                    aa = ascii.read(_dir + '/' + str(key) + '/' + imgresponse)
+#                    dictionary[img]['wave' + str(key)] = aa['wave']
+                    dictionary[img]['response' + str(key)] = aa['response']
 
                     
     for img in skip:
@@ -344,7 +343,7 @@ def makeflat(setup_flat,dictionary,setup,key,verbose=False):
        stack, masterflat = flatcombine2(flatlist, verbose = verbose, response = True, Saxis=0)
        _dir = '_'.join(setup)
        masterflatname = 'masterflat_' +  _dir  + '_' + str(key) + '.fits'
-       _out = fits.ImageHDU(data=nosky)
+       #_out = fits.ImageHDU(data=nosky)
        fits.writeto(_dir + '/' + str(key) + masterflatname, masterflat, overwrite='yes')       
     else:
         masterflat = None
@@ -1235,6 +1234,9 @@ def fitsens(obj_wave, obj_wave_ds, LogSensfunc, mode, polydeg0, obj_flux,std_wav
     _sensfunc2 = sensfunc2
     _mode = mode
     
+    x0 = np.min(_obj_wave)
+    x1 = np.max(_obj_wave)
+    
     ax2.plot(_obj_wave_ds, _LogSensfunc, 'ko', label='sensfunc')
     lines =    ax2.plot(_obj_wave, _sensfunc2, '-b', label='interpolated sensfunc')
     ax2.set_xlabel('Wavelength')
@@ -1249,6 +1251,10 @@ def fitsens(obj_wave, obj_wave_ds, LogSensfunc, mode, polydeg0, obj_flux,std_wav
              label='applied sensfunc')
 
     ax3.plot(_obj_wave_ds, _obj_flux_ds*(10**LogSensfunc), 'bo', label='downsample observed')
+
+    ax2.set_xlim([x0, x1])
+    ax22.set_xlim([x0, x1])
+    ax3.set_xlim([x0, x1])
     
     plt.legend()
     plt.draw()
@@ -1321,6 +1327,12 @@ def onkeypress(event):
              label='applied sensfunc')
 #    ax3.plot(np.array(_obj_wave_ds)[idd], np.array(_obj_flux_ds)[idd]*(10**np.array(_LogSensfunc)[idd]), 'bo', label='downsample observed')
     ax3.plot(np.array(_obj_wave_ds)[nonincl], np.array(_obj_flux_ds)[nonincl]*(10**np.array(_LogSensfunc)[nonincl]), 'ro', label='')
+    x0 = np.min(_obj_wave)
+    x1 = np.max(_obj_wave)
+    ax2.set_xlim([x0, x1])
+    ax22.set_xlim([x0, x1])
+    ax3.set_xlim([x0, x1])
+    
     plt.draw()
     
 ###############################################################################
@@ -1418,9 +1430,11 @@ def summary(dictionary):
 ###################################################################################
 
 def onkeypress1(event):
-    global _xx,_yy, center, lower, upper, l1,l2,u1,u2, line1, line2, line3, line5, fig, gs, ax1, ax2,line6
+    global _xx,_yy, center, lower, upper, l1,l2,u1,u2, line1, line2, line3, line5, fig, gs, ax1, ax2,line6,\
+        line7,line8, nx,linel1,linel2,lineu1,lineu2
     
     xdata,ydata = event.xdata,event.ydata
+    
     if event.key == '6' :
         lower = xdata
     if event.key == '7' :
@@ -1442,16 +1456,288 @@ def onkeypress1(event):
     line3.pop(0).remove()
     line5.pop(0).remove()
     line6.pop(0).remove()
+    line7.pop(0).remove()
+    line8.pop(0).remove()
+    linel1.pop(0).remove()
+    linel2.pop(0).remove()
+    lineu1.pop(0).remove()
+    lineu2.pop(0).remove()
+    
 
     line5 = ax1.plot(_yy,_xx,'-b')
     line1 = ax1.plot([l1,l2],[0,0],'-k')
     line2 = ax1.plot([u1,u2],[0,0],'-k')
     line3 = ax1.plot([lower,upper],[1,1],'-k')
     line6 = ax1.plot([center],[1],'or')
+    line7 = ax2.plot([lower,lower],[0,nx],'--r')
+    line8 = ax2.plot([upper,upper],[0,nx],'--r')
+    linel1 =  ax2.plot([l1,l1],[0,nx],'--y')
+    linel2 = ax2.plot([l2,l2],[0,nx],'--y')
+    lineu1 = ax2.plot([u1,u1],[0,nx],'--y')
+    lineu2 = ax2.plot([u2,u2],[0,nx],'--y')
     
+def interactive_extraction(dictionary,img, key, listobjects, nsky0, interactive=True):
+    global _dictionary, _img, _key, line1, line2, line3, line5, line6, gs, ax1, ax2,\
+        line40,line41,line42,line43, line7, _nsky1, bottom,top
+    
+    import string
+    _grism = dictionary[img]['GRATENAM']
+    _slit = dictionary[img]['SLMSKNAM']   
+    setup = (_grism,_slit)
+    _dir = '_'.join(setup)
+    # define global varaiable 
+    _dictionary = dictionary
+    _img = img
+    _key = key
+    _nsky1 = nsky0
+    bottom = None
+    top = None
+    
+
+    
+    if 'trimflat' + str(_key) in _dictionary[_img]:                           
+        image = _dictionary[_img]['trimflat' + str(_key) ]
+    elif 'trimmed' + str(_key) in _dictionary[_img]:
+        image = _dictionary[_img]['trimmed' + str(_key) ][0].data
+                                    
+    sky = _dictionary[_img]['sky' + str(_key)]
+    nosky = image - sky
+    ny, nx = nosky.shape
+    xs = np.arange(nx)
+    peak = _dictionary[_img]['peakpos_' + str(_key)]
+
+    fig = plt.figure(3,figsize=(7,9))
+    plt.clf()
+    gs = gridspec.GridSpec(nrows=3, 
+                       ncols=2, 
+                       figure=fig, 
+                       width_ratios= [1, 1],
+                       height_ratios=[1, 1, 1],
+                       wspace=0.3,
+                       hspace=0.3)
+    ny, nx = image.shape
+    sample = sigma_clip(image)
+    vmin = sample.mean() - 1 * sample.std()
+    vmax = sample.mean() + 3 * sample.std()
+    yvals, xvals = np.indices(image.shape)
+    extent = (xvals.min(), xvals.max(), yvals.min(), yvals.max())
+    
+    ax2 = fig.add_subplot(gs[0:2, 0:2])
+    ax2.imshow(image, origin='lower', cmap='gray', aspect='auto', vmin=vmin, vmax=vmax, extent=extent)
+    line1 = ax2.plot(xs,peak,'-r')
+    line2 = ax2.plot(xs,peak + float(_dictionary[_img]['aplow_'+str(_key)]),'-w')
+    line3 = ax2.plot(xs,peak + float(_dictionary[_img]['aphigh_'+str(_key)]),'-w')
+    bkg = np.array(string.split(_dictionary[_img]['bckgrintervals_' + str(_key)],','),float)
+    line40 = ax2.plot(xs,peak + bkg[0],'-y')
+    line41 = ax2.plot(xs,peak + bkg[1],'-y')
+    line42 = ax2.plot(xs,peak + bkg[2],'-y')
+    line43 = ax2.plot(xs,peak + bkg[3],'-y')
+
+    ax1 = fig.add_subplot(gs[2, 0:2])
+    if 'spec_basic'+str(_key) in _dictionary[_img]:
+        spec_basic = _dictionary[_img]['spec_basic' + str(_key)]
+        spec_opt = _dictionary[_img]['spec_opt' + str(_key)]
+        line5 = ax1.plot(xs, spec_opt, '-r', label='optimal extraction')
+        line7 = ax1.plot(xs, spec_basic, '-b', label='')
+        line6 = ax1.plot(xs, spec_basic, '-b', label='basic extraction')
+        ax1.set_xlabel('pixels')
+        ax1.set_ylabel('counts')
+        ax1.legend()
+
+    if interactive:
+        othertrace = None
+        _shift=0
+        if pyversion>=3:
+            answ = input('Do you want to use a different trace [1,2,3,4,5] [n] ?\n (see figure 2)\n[n] use object frame,\n1,2,3,4,5 (trace of different object ')
+        else:
+            answ = raw_input('Do you want to use a different trace [1,2,3,4,5] [n] ?\n (see figure 2)\n[n] use object frame,\n1,2,3,4,5 (trace of different object ')
+                                         
+        if not answ:
+            answ='n'
+        if answ in ['No','N','n','NO']:
+            othertrace = None
+        else:
+            othertrace = listobjects[int(answ)]
+            print(othertrace)
+            
+        if othertrace is not None:
+            _dictionary[_img]['peakpos_' + str(_key)] = _dictionary[othertrace]['peakpos_' + str(_key)]
+            peak = _dictionary[othertrace]['peakpos_' + str(_key)]
+            line1.pop(0).remove()
+            line1 = ax2.plot(xs,peak,'-g')
+        
+        
+        kid = fig.canvas.mpl_connect('key_press_event',onkeypress5)
+        plt.draw()
+        if pyversion>=3:
+            input('left-click mark bad, right-click unmark, <d> remove. Return to exit ...')
+        else:
+            raw_input('left-click mark bad, right-click unmark, <d> remove. Return to exit ...')
+        
+        
+    # take the trace from the other file but the rest of parameters from the target
+    meta ={
+        'aplow':               _dictionary[_img]['aplow_' + str(_key)],
+        'bckgrfunc':           _dictionary[_img]['bckgrfunc_' + str(_key)],
+        'bckgr_low_reject':    _dictionary[_img]['bckgr_low_reject_' + str(_key)],
+        'displine':            _dictionary[_img]['displine_' + str(_key)],
+        'aphigh':              _dictionary[_img]['aphigh_' + str(_key)],
+        'bckgrfunc_iraforder': _dictionary[_img]['bckgrfunc_iraforder_' + str(_key)],
+        'coeffs':              _dictionary[_img]['coeffs_' + str(_key)],
+        'bckgrintervals':      _dictionary[_img]['bckgrintervals_' + str(_key)],
+        'bckgr_niterate':      _dictionary[_img]['bckgr_niterate_' + str(_key)],
+        'bckgr_high_reject':   _dictionary[_img]['bckgr_high_reject_' + str(_key)],
+    }
+    
+    trace = dictionary[_img]['peakpos_'+str(_key)]
+    _dictionary[_img]['peakpos_'+str(_key)] = trace
+    imgtrace = re.sub('.fits','',_img) + '_' + str(_key) + '_trace.ascii'
+    output = _dir + '/' + str(_key)  + '/' + imgtrace                                
+    # write the new trace for this object
+    writetrace(trace,meta, 'trace', output)
+
+    return _dictionary
+
+def onkeypress5(event):
+    global _dictionary, _img, _key, line1, line2, line3, line5, line6, gs, ax1, ax2,\
+        line40,line41,line42,line43,line7, _nsky1, bottom,top
+    import string
+    
+    xdata,ydata = event.xdata,event.ydata
+    print(xdata,ydata)
+
+    if 'trimflat' + str(_key) in _dictionary[_img]:                           
+        image = _dictionary[_img]['trimflat' + str(_key) ]
+    elif 'trimmed' + str(_key) in _dictionary[_img]:
+        image = _dictionary[_img]['trimmed' + str(_key) ][0].data
+                                    
+    sky = _dictionary[_img]['sky' + str(_key)]
+    nosky = image - sky
+    ny, nx = nosky.shape
+    xs = np.arange(nx)
+    peak = _dictionary[_img]['peakpos_' + str(_key)]
+    peakinterp = interp1d(xs,peak)            
+    ny, nx = image.shape
+    sample = sigma_clip(image)
+    vmin = sample.mean() - 1 * sample.std()
+    vmax = sample.mean() + 3 * sample.std()
+    yvals, xvals = np.indices(image.shape)
+    extent = (xvals.min(), xvals.max(), yvals.min(), yvals.max())
+    
+    line1.pop(0).remove()
+    line2.pop(0).remove()
+    line3.pop(0).remove()
+    line40.pop(0).remove()
+    line41.pop(0).remove()
+    line42.pop(0).remove()
+    line43.pop(0).remove()
+    
+        
+    bkg = np.array(string.split(_dictionary[_img]['bckgrintervals_' + str(_key)],','),float)
+    if event.key == '6' :
+        _dictionary[_img]['aplow_' + str(_key)] = ydata - peakinterp(xdata)
+    if event.key == '7' :
+        _dictionary[_img]['aphigh_' + str(_key)] = ydata - peakinterp(xdata)
+        print('7')
+    if event.key == '1' :
+        bkg[0] = ydata - peakinterp(xdata)
+        _dictionary[_img]['bckgrintervals_' + str(_key)] = ', '.join([str(i) for i in bkg])
+    if event.key == '2' :
+        bkg[1] = ydata - peakinterp(xdata)
+        _dictionary[_img]['bckgrintervals_' + str(_key)] = ', '.join([str(i) for i in bkg])
+    if event.key == '3' :
+        bkg[2] = ydata - peakinterp(xdata)
+        _dictionary[_img]['bckgrintervals_' + str(_key)] = ', '.join([str(i) for i in bkg])
+    if event.key == '4' :
+        bkg[3] = ydata - peakinterp(xdata)
+        _dictionary[_img]['bckgrintervals_' + str(_key)] = ', '.join([str(i) for i in bkg])
+    if event.key == 'c' :
+        shift = ydata - peakinterp(xdata)
+        peak = peak + shift
+        _dictionary[_img]['peakpos_' + str(_key)] = peak
+
+        
+    line1 = ax2.plot(xs,peak,'-r')
+    line2 = ax2.plot(xs,peak + float(_dictionary[_img]['aplow_'+str(_key)]),'-w')
+    line3 = ax2.plot(xs,peak + float(_dictionary[_img]['aphigh_'+str(_key)]),'-w')
+
+    bkg = np.array(string.split(_dictionary[_img]['bckgrintervals_' + str(_key)],','),float)
+    line40 = ax2.plot(xs,peak + bkg[0],'-y')
+    line41 = ax2.plot(xs,peak + bkg[1],'-y')
+    line42 = ax2.plot(xs,peak + bkg[2],'-y')
+    line43 = ax2.plot(xs,peak + bkg[3],'-y')
+
+    ## write nosky file from dictionary
+    readnoise = 16
+    gain = 1
+    apmedfiltlength = 61 # no idea what is it
+    colfitorder, scattercut = 15, 25  # no idea what is it
+    othertrace = None
+    _shift = 0
+    if _nsky1:
+        print('\n##### Warning: extract on the trimmed image instead of the sky')
+        _rawdataname = 'trimmed'
+    else:
+        _rawdataname = 'nosky'
+
+    if 'spec_basic'+str(_key) in _dictionary[_img]:
+        spec_basic = _dictionary[_img]['spec_basic' + str(_key)]
+        spec_opt = _dictionary[_img]['spec_opt' + str(_key)]
+        line5.pop(0).remove()
+        line6.pop(0).remove()
+        line5 = ax1.plot(xs, spec_opt,'-r' ,label='optimal extraction')
+        line6 = ax1.plot(xs, spec_basic, '-b', label='basic extraction')
+        ax1.set_xlabel('pixels')
+        ax1.set_ylabel('counts')
+        ax1.legend()
+
+
+    if event.key in ['r','c','1','2','3','4','6','7']:
+        from deimos import irafext
+        spec_opt1, spec_basic1, skybg_opt1, spec_var1 = irafext.opextract_new(_img, 0, 0, False, 1,\
+                                                                              readnoise, gain, apmedfiltlength,
+                                                                              colfitorder, scattercut,
+                                                                              colfit_endmask=10,
+                                                                              diagnostic= False,
+                                                                              production= True,\
+                                                                              other = othertrace, shift=_shift,
+                                                                              dictionary= _dictionary, key= _key,
+                                                                              rawdataname = _rawdataname,
+                                                                              bckhigh = False, bcklow = False)
+
+        line7.pop(0).remove()
+        line7 = ax1.plot(xs, spec_opt1, '-g', label='new extraction')
+
+    if event.key =='b':
+        bottom = ydata
+    if event.key =='t':
+        top = ydata
+        
+    if bottom and top:
+        ax1.set_ylim(bottom,top)
+        
+#        # add exstraction to the dictionary
+#        #  iraf dimensions (to be checked)
+#        #  1 optimal extraction
+#        #  2 basic extraction
+#        #  3 sky
+#        #  4 errors
+#        _dictionary[img]['spec_basic' + str(key)]= spec_basic
+#        _dictionary[img]['spec_opt' + str(key)]= spec_opt
+#        _dictionary[img]['skybg_opt' + str(key)]= skybg_opt
+#        _dictionary[img]['spec_var' + str(key)]= spec_var
+        
+
+
+
+        
+############################################
+        
+        
     
 def profilespec(data,dispersion):
-    global _xx,_yy, center, lower, upper, l1,l2,u1,u2, line1, line2, line3, line5, fig, gs, ax1, ax2, line6
+    global _xx,_yy, center, lower, upper, l1,l2,u1,u2, line1, line2, line3, line5, fig, gs, ax1, ax2, line6,\
+        line7,line8, nx,linel1,linel2,lineu1,lineu2
     print("\n##################\n 1 = bg1\n 2 = bg2\n 3 = bg3\n 4 = bg4\n 6 = lower\n 7 = upper\n c = center")
     fig = plt.figure(1,figsize=(7,9))
     plt.clf()
@@ -1465,6 +1751,7 @@ def profilespec(data,dispersion):
 
     # upper plot
     datat = data.transpose()
+    ny, nx = data.shape
     sample = sigma_clip(data)
     vmin = sample.mean() - 1 * sample.std()
     vmax = sample.mean() + 3 * sample.std()
@@ -1483,7 +1770,6 @@ def profilespec(data,dispersion):
 
     _xx = xx
     _yy = yy
-#    center = np.argmax(_xx)
 
     high = 1.
     fwhm = 5.
@@ -1493,7 +1779,6 @@ def profilespec(data,dispersion):
     guessbound = [(0.1,1.9),(_cent-30, _cent+30),(fwhm/3.,fwhm*2)]
     params1 = minimize(get_profile_chisq, guess, args=(_yy, _xx), bounds=guessbound)
 
-    print(params1['x'])
     centfit = params1['x'][1]
     fwhmfit = params1['x'][2]
     if centfit!= _cent:
@@ -1519,6 +1804,12 @@ def profilespec(data,dispersion):
     line2 = ax1.plot([u1,u2],[0,0],'-k')
     line3 = ax1.plot([lower,upper],[1,1],'-k')
     line6 = ax1.plot(center,1,'or')
+    line7 = ax2.plot([lower,lower],[0,nx],'--r')
+    line8 = ax2.plot([upper,upper],[0,nx],'--r')
+    linel1 =  ax2.plot([l1,l1],[0,nx],'--y')
+    linel2 = ax2.plot([l2,l2],[0,nx],'--y')
+    lineu1 = ax2.plot([u1,u1],[0,nx],'--y')
+    lineu2 = ax2.plot([u2,u2],[0,nx],'--y')
     
     kid = fig.canvas.mpl_connect('key_press_event',onkeypress1)
     plt.draw()
