@@ -7,6 +7,7 @@ import sys
 from scipy.optimize import fmin
 pyversion = sys.version_info[0]
 import deimos
+import os
 
 poly_arc = {3: np.array([  1.03773471e-05,   5.78487274e-01,   4.45847046e+03]),
 #            7: np.array([  2.30350858e-05,  -7.64099597e-01,   9.79141140e+03]),
@@ -347,110 +348,6 @@ def checkwithtelluric(wave, flux, key, ref_filename, guess = (1.0, 1.001), verbo
     return bestparams[0],bestparams[1]
 ###########################################################
 
-#def checkwithtelluric(wave, flux, key, ref_filename, guess = (1.0, 1.001), verbose=False):
-#    from astropy.io import ascii
-#    from astropy.table import QTable
-#    if key == 7:
-#        which_side = 'red'
-#    if key == 3:
-#        which_side = 'blue'
-#    std = QTable([wave,flux], names=('wave', 'flux'))
-#    std.sort('wave')
-#    stdwave = std['wave']
-#    stdflux = std['flux']
-#    
-#    stdflux = stdflux-stdflux.min()
-#    stdflux = stdflux/stdflux.max()
-#    
-#    # this will be the array with atmospheric lines removed
-#    stdwave_cut = stdwave
-#    stdflux_cut = stdflux
-#    # cut the atmoshperic lines
-#    if which_side == 'red':
-#        atm_range = [[7150, 7420],[7580,7730],[7840,8450]] #red
-#    if which_side == 'blue':  
-#        #atm_range = [[6250,6340],[6850,7100],[7150, 7420],[7580,7730],[7840,8450]]
-#        atm_range = [[6250,6340],[6850,6990]]
-#    for j in atm_range:
-#        ww = (stdwave_cut < j[0]) | (stdwave_cut > j[1])
-#        stdwave_cut = stdwave_cut[ww]
-#        stdflux_cut = stdflux_cut[ww]
-#        
-#    # read the reference sky
-#    hdu = fits.open(ref_filename)
-#    y = hdu[0].data
-#    x = np.arange(len(y))
-#    A = hdu[0].header['CRVAL1']
-#    B = hdu[0].header['CDELT1']
-#    # use headers to get the wavelength calibration
-#    sky_wave = A +B *x #+ 100
-#    sky_flux =  y
-#    if which_side == 'red':
-#        ss = (sky_wave > 6500) & (sky_wave < 9200)
-#    if which_side == 'blue':
-#        ss = (sky_wave > 4500) & (sky_wave < 7200)
-#    sky_flux = sky_flux[ss]
-#    sky_wave = sky_wave[ss]
-#    
-#    # inteprolate the array
-#    # after removing the telluric I need to inteprolate along the cut to get the same file dimention 
-#    flux_interp = interp1d(stdwave_cut, stdflux_cut, bounds_error=False )
-#    new_stdflux = flux_interp(stdwave)
-#
-#    # the atmospheric file is usually 1 everywhwere 
-#    atmo = stdflux/new_stdflux
-#    atmo[atmo<0]=0
-#    if which_side == 'red':
-#        gg = (stdwave < 8500) #red
-#    if which_side == 'blue':
-#        gg = (stdwave > 5000)
-#    atmwave=stdwave[gg]
-#    atmflux = atmo[gg]
-#    
-#    #guess = (50.001, 1.001)
-#    model = model_lamp_std(guess, atmwave, atmflux)
-#    
-#    # the get_lamp_difference file takes the inteprolate model file as input 
-#    atmomodel_interp = interp1d(sky_wave, sky_flux, bounds_error=False)
-#    
-#    # run the minization giving the interpolated atmospheric file, the initial parameter and the 
-#    bestparams = fmin(get_lamp_difference_std, guess, args=(atmwave, atmflux, atmomodel_interp), maxiter=10000, disp = False)
-#    # this should be the best parameters for shift and sclae (c)
-#    print(bestparams)
-#    shift, scalefactor = bestparams[0],bestparams[1]
-#    print ('myshift: '+str(shift))
-#    wave = wave + shift
-#    atmwave = atmwave + shift
-#
-#    if verbose:
-#        plt.figure(2)
-#        fig2 = plt.figure(2)
-#        fig2.clf()
-#        # compare the reference spectrum and the extracted sky spectrum
-#        ax2 = fig2.add_subplot(2, 1, 1)
-#        ax22 = fig2.add_subplot(2, 1, 2)
-#        ax2.plot(atmwave, atmflux,'-r')
-#        ax2.axes.set_ylabel('Flux Density ($10^{16} f_{\lambda}$)')
-#        ax2.axes.set_xlabel('Wavelength ($\AA$)')
-#        ax2.plot(sky_wave, sky_flux)
-#                                    
-#        # plot the extracted sky spectrum 
-#        ax22.plot(wave, flux)
-#        ax22.axes.set_ylabel('Counts')
-#        ax22.axes.set_xlabel('wavelenght');            
-#        if pyversion>=3:
-#            input('stop std')
-#        else:
-#            raw_input('stop std')
-#            
-#    #model = model_lamp_std(bestparams, atmwave, atmflux)
-#    #plt.clf()
-#    #plt.plot(sky_wave,sky_flux,'k',linewidth=5)
-#    #plt.plot(atmwave,atmflux,'r',alpha=0.7)
-#    #plt.plot(model['wav'],model['flux'],'-m',alpha=0.7)
-#    #input('myshift')
-#    return bestparams[0],bestparams[1]
-############################################################
 
 def get_lamp_difference(params, wave, flux, skyref_interp):
     model = model_lamp(params, wave, flux)
@@ -588,8 +485,7 @@ def onkeycazzo(event):
 
 #################################
 
-def wavesolution(reference, newarc, key, radius, edge, initial_solution, deg, initial_shift=0.1):
-
+def wavesolution(reference, pixel, flux, key, radius, edge, initial_solution, deg, initial_shift=0.1):
     #  read template spectrum 
     hdu  = fits.open(reference)
     dd =hdu[1].data
@@ -602,11 +498,17 @@ def wavesolution(reference, newarc, key, radius, edge, initial_solution, deg, in
     # we must interpolate the reference spectrum to the model wavelengths
     skyref_interp = interp1d(skyref['wav'], skyref['flux'], bounds_error=False)
 
-    # read asci extraction 
-    data = np.genfromtxt(newarc)
 
-    # normalize spectrum 
+##
+#    I don't understand what is happening here. if I write the file and read it again it works?!?!?!
+#    
+##
+    imgout = 'arc_test1.ascii'
+    np.savetxt(imgout, np.c_[pixel, flux], header='pixel  flux')
+    # read asci extraction 
+    data = np.genfromtxt('arc_test1.ascii')    
     pixel , flux= zip(*data)
+
     flux = flux - np.min(flux)
     flux = flux/np.max(flux)
 
@@ -676,13 +578,65 @@ def wavesolution(reference, newarc, key, radius, edge, initial_solution, deg, in
     finalsolution = fitlamp(lampixel, refpeak, lampeak, deg, pixel, flux, skyref)
     return finalsolution
 
-##########################################
-#reference = 'keck_deimos_600.fits'
-#key=7
-#newarc = 'arc_600ZD_LVMslitC_' + str(key) + '.ascii'
-#initial_solution = poly_arc[key]
-#radius = 10
-#edges = 7
-#deg = 5
-#finalsolution = wavesolution(reference, newarc, key, radius, edges, initial_solution, deg)
-#print(finalsolution)
+##############################################################################################################################
+
+def checkshift(img, dictionary, key, wave, arc, arcspec, sky, skyref, skyref_interp, setup, verbose = True ):
+    dictionary[img]['arcfile' + str(key)]= arc[key]
+    dictionary[img]['arcspec' + str(key)] = arcspec
+    flux = dictionary[img]['spec_opt' + str(key)]
+    _dir = '_'.join(setup)
+    shift = 0
+    if 'std' not in dictionary[img].keys():
+        # check if it is monotonically increasing
+        dxa = np.diff(wave)
+        if (dxa > 0).all() is False:
+            print('invert vector')
+            sky0 = sky[::-1]
+            wave0 = wave[::-1]
+        else:
+            sky0 = sky
+            wave0 = wave
+            
+        guess = (.000001,  1.00001, 0.00001)
+#        bestparams = fmin(deimos.deimoswave.get_lamp_difference, guess, args=(wave0, sky0, skyref_interp), maxiter=10000)
+        bestparams = fmin(get_lamp_difference, guess, args=(wave0, sky0, skyref_interp), maxiter=10000)
+        if (dxa > 0).all() is False:
+            shift = bestparams[0]
+        else:
+            shift = (-1) * bestparams[0]
+    
+        print('shift the spectrum of ',shift)        
+        #  wavelength calibration in the database
+        wave = wave + shift
+            
+        if verbose:
+            plt.figure(2)
+            fig2 = plt.figure(2)
+            fig2.clf()
+            # compare the reference spectrum and the extracted sky spectrum
+            ax2 = fig2.add_subplot(2, 1, 1)
+            ax22 = fig2.add_subplot(2, 1, 2)
+            ax2.plot(skyref['wav'], skyref['flux']/np.max(skyref['flux']))
+            ax2.axes.set_ylabel('Flux Density ($10^{16} f_{\lambda}$)')
+            ax2.axes.set_xlabel('Wavelength ($\AA$)')
+            ax2.plot(wave, sky0)
+            
+            # plot the extracted sky spectrum 
+            ax22.plot(wave, flux)
+            ax22.axes.set_ylabel('Counts')
+            ax22.axes.set_xlabel('wavelenght');
+            if pyversion>=3:
+                input('stop here')
+            else:
+                raw_input('stop here')        
+    else:
+        ref_filename = os.path.join(deimos.__path__[0]+'/resources/sky/','std_telluric.fits')
+        imgout = 'std_'+ _dir + '_' + str(key) + '.ascii'
+        np.savetxt(imgout, np.c_[wave, flux ], header='wave  flux ')        
+#        shift, scalefactor = deimos.deimoswave.checkwithtelluric(wave, flux , key, ref_filename, guess=(0.001,1.0001), verbose=True)
+        shift, scalefactor = checkwithtelluric(wave, flux , key, ref_filename, guess=(0.001,1.0001), verbose=True)
+        print ('myshift: '+str(shift))
+        print('shift the spectrum of ',shift)        
+        #  wavelength calibration in the database
+        wave = wave + shift
+    return dictionary, wave

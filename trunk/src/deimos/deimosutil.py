@@ -10,6 +10,9 @@ from scipy.signal import find_peaks_cwt
 import ccdproc
 from astropy.nddata import CCDData
 from astropy import units as u
+from astropy.table import QTable
+import glob
+import string
 from scipy.interpolate import LSQBivariateSpline, LSQUnivariateSpline
 from scipy.interpolate import UnivariateSpline
 from scipy.interpolate import SmoothBivariateSpline
@@ -1493,8 +1496,6 @@ def interactive_extraction(dictionary,img, key, listobjects, nsky0, interactive=
     bottom = None
     top = None
     
-
-    
     if 'trimflat' + str(_key) in _dictionary[_img]:                           
         image = _dictionary[_img]['trimflat' + str(_key) ]
     elif 'trimmed' + str(_key) in _dictionary[_img]:
@@ -1566,7 +1567,7 @@ def interactive_extraction(dictionary,img, key, listobjects, nsky0, interactive=
             line1.pop(0).remove()
             line1 = ax2.plot(xs,peak,'-g')
         
-        
+        print('\n#####################\n  1,2,3,4 for background\n 6,7 for aperture \n b,t to zoom the spectrum\n [c]-enter,[r] extract again) \n')   
         kid = fig.canvas.mpl_connect('key_press_event',onkeypress5)
         plt.draw()
         if pyversion>=3:
@@ -1623,9 +1624,9 @@ def onkeypress5(event):
     vmax = sample.mean() + 3 * sample.std()
     yvals, xvals = np.indices(image.shape)
     extent = (xvals.min(), xvals.max(), yvals.min(), yvals.max())
-    
-    line1.pop(0).remove()
-    line2.pop(0).remove()
+
+    if len(line1):    line1.pop(0).remove()
+    if len(line2):    line2.pop(0).remove()
     line3.pop(0).remove()
     line40.pop(0).remove()
     line41.pop(0).remove()
@@ -1683,8 +1684,8 @@ def onkeypress5(event):
     if 'spec_basic'+str(_key) in _dictionary[_img]:
         spec_basic = _dictionary[_img]['spec_basic' + str(_key)]
         spec_opt = _dictionary[_img]['spec_opt' + str(_key)]
-        line5.pop(0).remove()
-        line6.pop(0).remove()
+        if line5: line5.pop(0).remove()
+        if line6: line6.pop(0).remove()
         line5 = ax1.plot(xs, spec_opt,'-r' ,label='optimal extraction')
         line6 = ax1.plot(xs, spec_basic, '-b', label='basic extraction')
         ax1.set_xlabel('pixels')
@@ -1692,7 +1693,7 @@ def onkeypress5(event):
         ax1.legend()
 
 
-    if event.key in ['r','c','1','2','3','4','6','7']:
+    if event.key in ['r','c']:
         from deimos import irafext
         spec_opt1, spec_basic1, skybg_opt1, spec_var1 = irafext.opextract_new(_img, 0, 0, False, 1,\
                                                                               readnoise, gain, apmedfiltlength,
@@ -1705,15 +1706,30 @@ def onkeypress5(event):
                                                                               rawdataname = _rawdataname,
                                                                               bckhigh = False, bcklow = False)
 
-        line7.pop(0).remove()
+        if line7:
+            line7.pop(0).remove()
         line7 = ax1.plot(xs, spec_opt1, '-g', label='new extraction')
-
+        _dictionary[_img]['spec_basic' + str(_key)]= spec_basic1
+        _dictionary[_img]['spec_opt' + str(_key)]= spec_opt1
+        
     if event.key =='b':
         bottom = ydata
     if event.key =='t':
         top = ydata
         
     if bottom and top:
+        spec_basic = _dictionary[_img]['spec_basic' + str(_key)]
+        spec_opt = _dictionary[_img]['spec_opt' + str(_key)]
+        if line5: line5.pop(0).remove()
+        if line6: line6.pop(0).remove()
+        line5 = ax1.plot(xs, spec_opt,'-r' ,label='optimal extraction')
+        line6 = ax1.plot(xs, spec_basic, '-b', label='basic extraction')
+        if line7:
+            line7.pop(0).remove()
+        line7 = ax1.plot(xs, spec_opt1, '-g', label='new extraction')
+        ax1.set_xlabel('pixels')
+        ax1.set_ylabel('counts')
+        ax1.legend()
         ax1.set_ylim(bottom,top)
         
 #        # add exstraction to the dictionary
@@ -2129,3 +2145,170 @@ def flatcombine2(flatlist, verbose = False, response = True, Saxis=0):
     return flat_stack, flat
 
 ######################################
+def writetable(wave,flux,hed, output = '_output', sky=None, cov=None, optimal=None, verbose=False):
+    from astropy.io import fits as pyfits
+    # BINTABLE COLUMNS : wl in Angstrom, flux in erg cm**(-2) s**(-1)
+    # angstrom**(-1)
+    pixelCount = len(flux)
+    wlArray = np.array([wave], dtype=object)
+    wlCol = pyfits.Column(name='WAVE',
+                      format='%sE' % (pixelCount,), unit='angstrom', array=wlArray)
+
+    fluxArray = np.array([flux], dtype=object) 
+    fluxCol = pyfits.Column(name='FLUX',
+                        format='%sE' % (pixelCount,), unit='erg cm**(-2) s**(-1) angstrom**(-1)', array=fluxArray)
+    vec = [wlCol,fluxCol]
+    if cov is not None:
+        # maybe I need to take the sqrt
+        # fluxErrArray = np.array([np.sqrt(varianceData[0])])
+        #
+        fluxErrArray = np.array([cov], dtype=object)
+        fluxErrCol = pyfits.Column(name='ERR',
+                               format='%sE' % (pixelCount,), unit='erg cm**(-2) s**(-1) angstrom**(-1)', array=fluxErrArray)
+        vec.append(fluxErrCol)
+
+    if sky is not None:
+       skyArray = np.array([sky], dtype=object)
+       backgroundCol = pyfits.Column(name='SKYBACK',
+                                 format='%sE' % (pixelCount,), unit='erg cm**(-2) s**(-1) angstrom**(-1)', array=skyArray)
+       vec.append(backgroundCol)
+
+    if optimal is not None:
+       optimalArray = np.array([optimal], dtype=object)
+       optimalCol = pyfits.Column(name='OPTIMAL',
+                                 format='%sE' % (pixelCount,), unit='erg cm**(-2) s**(-1) angstrom**(-1)', array=optimalArray)
+       vec.append(optimalCol)
+
+    coldefs = pyfits.ColDefs(vec)
+    tbhdu = pyfits.BinTableHDU.from_columns(coldefs)
+    hdu = pyfits.PrimaryHDU(header=hed)
+    thdulist = pyfits.HDUList([hdu, tbhdu])
+    thdulist.writeto(output, overwrite=True, output_verify="fix+ignore")
+
+
+##################################################################################################################
+def writefitstable(setup,name): 
+    _dir = '_'.join(setup)
+    wave={}
+    flux={}
+    sky={}
+    variance={}
+    # read pipeline output
+    for key in ('3','7'):
+        line = _dir+'/'+str(key)+ '/*' + str(name)+ '*flux.ascii'
+        print(line)
+        imglist = glob.glob(line)
+        print(imglist)
+        if key not in sky:
+            sky[key] = []
+        if key not in variance:
+            variance[key] = []
+        if key not in flux:
+            flux[key] = []
+        if key not in wave:
+            wave[key] = []        
+        for img in imglist:
+            print(img)
+            xxx = QTable.read(img,format='ascii')
+            wave[key].append(xxx['wave'])
+            flux[key].append(xxx['spec_flux'])
+            
+            if 'mysky' in xxx.keys():
+                sky[key].append(xxx['mysky'])
+            if 'spec_var' in xxx.keys():
+                variance[key].append(xxx['spec_var'])
+                
+    # interpole the flux to the same wave
+    median={}
+    med_variance = {}
+    med_sky={}
+    for key in flux.keys():
+        if key not in median:
+            median[key]=[]
+            
+        if len(wave[key])>1:
+            for i,j in enumerate(wave[key]):
+                if i!=0:
+                    interp = interp1d(wave[key][i],flux[key][i], bounds_error=False)
+                    flux[key][i] = interp(wave[key][0])
+                    
+            # do the median            
+            meanflux = np.nanmean(flux[key],axis=0)
+            medianflux = np.nanmedian(flux[key],axis=0)
+            median[key]=medianflux
+            
+        else:
+            median[key] = flux[key][0]
+            
+                    
+        if len(variance[key])>0:
+            if len(variance[key])>1:
+                for i,j in enumerate(variance[key]):
+                    if i!=0:
+                        interpv = interp1d(wave[key][i],variance[key][i], bounds_error=False)
+                        variance[key][i] = interpv(wave[key][0])
+                        # do median
+                        
+                medianvar = np.nanmedian(variance[key],axis=0)
+                med_variance[key]=medianvar
+                        
+            else:
+                med_variance[key] = variance[key][0]
+        else:
+            med_variance[key] = None
+                
+        if len(sky[key])>0:
+            if len(sky[key])>1:
+                for i,j in enumerate(sky[key]):
+                    interps = interp1d(wave[key][i],sky[key][i], bounds_error=False)
+                    sky[key][i] = interps(wave[key][0])
+                # do median
+                mediansky = np.nanmedian(sky[key],axis=0)
+                med_sky[key]=mediansky                 
+            else:
+                med_sky[key] = sky[key][0]
+        else:
+            med_sky[key] = None
+                
+    # read the header
+    imgtrim = string.split(imglist[0],name)[0]+'trimmed.fits'
+    hdu = fits.open(imgtrim)
+    hed = hdu[0].header
+
+    
+    for key in ['3','7']:
+        if wave[key][0][-1] -  wave[key][0][0] < 0:
+            print('invert vector')
+            wave[key][0] = wave[key][0][::-1]
+            median[key] = median[key][::-1]
+            if med_sky[key] is not None:
+                med_sky[key] = med_sky[key][::-1]
+            if med_variance[key] is not None:
+                med_variance[key] = med_variance[key][::-1]
+            
+    # write the table 
+    xx = np.append(wave['3'][0],wave['7'][0])
+    yy = np.append(median['3'], median['7'])
+
+    fig = plt.figure(2)
+    fig.clf()
+    plt.plot(xx,yy, '-r')
+    
+    if med_variance['3'] is not None and med_variance['7'] is not None:
+        _cov = np.append(med_variance['3'], med_variance['7'])
+        plt.plot(xx,_cov, '-b')
+    else:
+        _cov = None
+
+    if med_sky['3'] is not None and med_sky['7'] is not None:
+        _sky = np.append(med_sky['3'], med_sky['7'])
+        plt.plot(xx,_sky, '-g')
+    else:
+        _sky = None
+
+    raw_input('go on')
+    _output= 'final/' + name + '_deimos_' + str(hed['MJD-OBS']) + '.fits'
+    writetable(xx,yy,hed, output = _output, sky= _sky, cov= _cov, optimal=None, verbose=True)
+    return _output
+
+##################################################################################################################
